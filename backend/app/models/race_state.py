@@ -80,7 +80,9 @@ class Car(BaseModel):
     status: CarStatus = CarStatus.RACING
     #SKILL
     driver_skill: float = Field(ge=0.0, le=1.0, default=0.90, description="Driver skill level (0.0 to 1.0)")
-
+    in_pit_lane: bool = Field(default=False)
+    pit_lane_progress: float = Field(ge=0.0, le=1.0, default=0.0)
+    
 class Track(BaseModel):
     """describes the Circuit where the race is happening"""
     id: str = Field(description="Unique identifier for the track")
