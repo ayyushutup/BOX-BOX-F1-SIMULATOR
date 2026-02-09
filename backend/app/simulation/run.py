@@ -13,7 +13,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run F1 race simulation")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for determinism")
     parser.add_argument("--laps", type=int, default=53, help="Total laps")
-    parser.add_argument("--track", type=str, default="monaco", choices=["monaco", "monza", "spa"])
+    parser.add_argument("--track", type=str, default="monaco", choices=["monaco", "monza", "spa", "silverstone"])
     args = parser.parse_args()
     
     print(f"\n🏎️  Box-Box F1 Simulation")
@@ -58,9 +58,9 @@ def main():
 def print_lap_summary(state, lap):
     """Print summary of current lap."""
     racing_cars = [c for c in state.cars if c.status.value == "RACING"]
-    top3 = sorted(racing_cars, key=lambda c: c.position)[:3]
+    top5 = sorted(racing_cars, key=lambda c: c.position)[:5]
     
-    drivers = " | ".join([f"{c.driver} P{c.position}" for c in top3])
+    drivers = " | ".join([f"{c.driver} P{c.position}" for c in top5])
     
     # Add race condition indicators
     flags = ""
@@ -86,6 +86,14 @@ def print_final_results(state):
             print(f"  {car.position:2d}. {car.driver} ({car.team}) {icon}")
         else:
             print(f"  -- {car.driver} ({car.team}) ❌ DNF")
+    
+    # Find fastest lap
+    racing_cars = [c for c in state.cars if c.best_lap_time is not None]
+    if racing_cars:
+        fastest = min(racing_cars, key=lambda c: c.best_lap_time)
+        minutes = int(fastest.best_lap_time // 60)
+        seconds = fastest.best_lap_time % 60
+        print(f"\n⏱️  Fastest Lap: {fastest.driver} - {minutes}:{seconds:06.3f}")
 
 
 if __name__ == "__main__":
