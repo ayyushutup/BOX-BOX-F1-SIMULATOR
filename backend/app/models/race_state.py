@@ -26,6 +26,12 @@ class SectorType(str, Enum):
     MEDIUM = "MEDIUM"
     FAST = "FAST"
 
+class DrivingMode(str, Enum):
+    """Driver strategy mode"""
+    PUSH = "PUSH"         # High speed, high wear/fuel
+    BALANCED = "BALANCED" # Normal
+    CONSERVE = "CONSERVE" # Low speed, saves wear/fuel
+
 class TireState(BaseModel):
     """Tire state during a race"""
     compound: TireCompound
@@ -37,6 +43,11 @@ class Weather(BaseModel):
     rain_probability: float = Field(ge=0.0, le=1.0)
     temperature: float = Field(description="Celsius")
     wind_speed: float = Field(ge=0.0, description="km/h")
+
+class DRSZone(BaseModel):
+    """DRS activation zone on the track"""
+    start: float = Field(ge=0.0, le=1.0, description="lap_progress where DRS can be activated")
+    end: float = Field(ge=0.0, le=1.0, description="lap_progress where DRS ends")
 
 class Sector(BaseModel):
     """A section of the Track"""
@@ -82,6 +93,26 @@ class Car(BaseModel):
     driver_skill: float = Field(ge=0.0, le=1.0, default=0.90, description="Driver skill level (0.0 to 1.0)")
     in_pit_lane: bool = Field(default=False)
     pit_lane_progress: float = Field(ge=0.0, le=1.0, default=0.0)
+    # DRS
+    drs_active: bool = Field(default=False, description="DRS currently open")
+    # ERS (Energy Recovery System)
+    ers_battery: float = Field(ge=0.0, le=4.0, default=4.0, description="ERS battery in MJ (0-4)")
+    ers_deployed: bool = Field(default=False, description="Currently deploying ERS")
+    # LAP TIMES
+    last_lap_time: float | None = Field(default=None, description="Last lap time in seconds")
+    best_lap_time: float | None = Field(default=None, description="Best lap time in seconds")
+    lap_start_tick: int = Field(default=0, description="Tick when current lap started")
+    
+    # PHYSICS EXTENSIONS
+    driving_mode: DrivingMode = Field(default=DrivingMode.BALANCED, description="Current driving strategy")
+    dirty_air_effect: float = Field(default=0.0, description="Speed penalty from dirty air (0.0 to 1.0)")
+    
+    # TIMING GAPS
+    gap_to_leader: float | None = Field(default=None, description="Gap to leader in seconds")
+    interval: float | None = Field(default=None, description="Gap to car ahead in seconds")
+    
+    # TEAM PRINCIPAL COMMANDS
+    active_command: str | None = Field(default=None, description="Active command from Team Principal (BOX_THIS_LAP, PUSH, CONSERVE)")
     
 class Track(BaseModel):
     """describes the Circuit where the race is happening"""
@@ -90,6 +121,23 @@ class Track(BaseModel):
     length: int= Field(gt=0, description="Length of track in meters")
     sectors: List[Sector] = Field(min_length=3, max_length=3, description="List of sectors in the Track")
     weather: Weather
+    drs_zones: List[DRSZone] = Field(default_factory=list, description="DRS activation zones")
+    svg_path: str = Field(default="", description="SVG path d-attribute for track map")
+    view_box: str = Field(default="0 0 500 500", description="SVG viewBox attribute")
+    
+    # Dashboard Metadata
+    abrasion: str = Field(default="MEDIUM", description="Tire abrasion level (LOW, MEDIUM, HIGH)")
+    downforce: str = Field(default="MEDIUM", description="Required downforce (LOW, MEDIUM, HIGH)")
+    is_street_circuit: bool = Field(default=False, description="Is this a street circuit?")
+    sc_probability: int = Field(default=0, ge=0, le=100, description="Safety Car probability %")
+    expected_overtakes: int = Field(default=0, description="Expected number of overtakes")
+    pit_stop_loss: float = Field(default=20.0, description="Time lost in pit stop (seconds)")
+    chaos_level: int = Field(default=0, ge=0, le=100, description="Track chaos rating %")
+    
+    # UI Display Fields
+    country_code: str = Field(default="XX", description="ISO 3166-1 alpha-2 country code")
+    avg_lap_time: str = Field(default="0:00.000", description="Average lap time for display")
+    pit_lap_window: str = Field(default="0-0", description="Expected pit stop window")
 
 class Event(BaseModel):
     """Event that occurred during the race"""
