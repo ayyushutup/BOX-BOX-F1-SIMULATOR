@@ -25,8 +25,16 @@ const TrackCard = ({ track, onSelect, chaosLevel }) => {
                     <path
                         d={track.svg_path}
                         fill="none"
-                        stroke="#000"
+                        stroke="rgba(255,255,255,0.15)"
                         strokeWidth="15"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    />
+                    <path
+                        d={track.svg_path}
+                        fill="none"
+                        stroke="rgba(255,255,255,0.5)"
+                        strokeWidth="3"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                     />
