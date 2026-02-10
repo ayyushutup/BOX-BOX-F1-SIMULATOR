@@ -162,8 +162,30 @@ def tick(state: RaceState, rng: SeededRNG, driver_commands: dict = None) -> Race
                 # Mode commands persist until explicitly changed
         new_cars.append(updated_car)
 
-    # Recalculate positions based on total progress
-    new_cars = recalculate_positions(new_cars, state.track)
+    # Recalculate positions based on total progress (and detect overtakes)
+    old_positions = {c.driver: c.position for c in state.cars}
+    new_cars, overtake_events = recalculate_positions(new_cars, state.track, old_positions, new_tick, current_lap)
+    new_events.extend(overtake_events)
+
+    # Track global fastest lap
+    for car in new_cars:
+        if car.last_lap_time is not None and car.status == CarStatus.RACING:
+            # Check if this is the overall fastest lap across ALL cars
+            all_best_times = [
+                c.best_lap_time for c in new_cars
+                if c.best_lap_time is not None and c.driver != car.driver
+            ]
+            global_best = min(all_best_times) if all_best_times else float('inf')
+            if car.best_lap_time is not None and car.best_lap_time < global_best:
+                # Only emit event when car just set this time (last_lap == best_lap)
+                if car.last_lap_time == car.best_lap_time:
+                    new_events.append(Event(
+                        tick=new_tick,
+                        lap=car.lap,
+                        event_type=EventType.FASTEST_LAP,
+                        driver=car.driver,
+                        description=f"{car.driver} sets fastest lap: {car.best_lap_time:.1f}s"
+                    ))
 
     # Return new state
     return RaceState(
@@ -178,8 +200,10 @@ def tick(state: RaceState, rng: SeededRNG, driver_commands: dict = None) -> Race
     )
 
 
-def recalculate_positions(cars: list[Car], track) -> list[Car]:
-    """Recalculate race positions based on total progress."""
+def recalculate_positions(cars: list[Car], track, old_positions: dict = None, tick: int = 0, current_lap: int = 0) -> tuple[list[Car], list[Event]]:
+    """Recalculate race positions based on total progress. Detects overtakes."""
+    if old_positions is None:
+        old_positions = {}
     
     # Sort by total progress (lap + lap_progress), highest first
     sorted_cars = sorted(
@@ -190,9 +214,30 @@ def recalculate_positions(cars: list[Car], track) -> list[Car]:
     
     # Assign new positions and calculate gaps
     new_cars = []
+    overtake_events = []
     leader = sorted_cars[0] if sorted_cars else None
     
     for i, car in enumerate(sorted_cars):
+        new_position = i + 1
+        
+        # Detect overtake: position improved vs previous tick
+        old_pos = old_positions.get(car.driver)
+        if old_pos is not None and new_position < old_pos and car.status == CarStatus.RACING:
+            # Find who got overtaken (the car that was in new_position before)
+            overtaken_driver = None
+            for drv, pos in old_positions.items():
+                if pos == new_position and drv != car.driver:
+                    overtaken_driver = drv
+                    break
+            if overtaken_driver:
+                overtake_events.append(Event(
+                    tick=tick,
+                    lap=current_lap,
+                    event_type=EventType.OVERTAKE,
+                    driver=car.driver,
+                    description=f"{car.driver} overtakes {overtaken_driver} for P{new_position}"
+                ))
+        
         # Calculate gaps
         gap_to_leader = 0.0
         interval = 0.0
@@ -202,14 +247,13 @@ def recalculate_positions(cars: list[Car], track) -> list[Car]:
             car_ahead = sorted_cars[i-1]
             interval = calculate_gap_to_car_ahead(car, car_ahead, track.length)
             
-            # Gap to leader (sum of intervals approximation or direct calculation)
-            # Direct calculation is better
+            # Gap to leader (direct calculation)
             gap_to_leader = calculate_gap_to_car_ahead(car, leader, track.length)
             
         new_car = Car(
             driver=car.driver,
             team=car.team,
-            position=i + 1,
+            position=new_position,
             lap=car.lap,
             sector=car.sector,
             lap_progress=car.lap_progress,
@@ -230,11 +274,12 @@ def recalculate_positions(cars: list[Car], track) -> list[Car]:
             driving_mode=car.driving_mode,
             dirty_air_effect=car.dirty_air_effect,
             gap_to_leader=gap_to_leader if i > 0 else None,
-            interval=interval if i > 0 else None
+            interval=interval if i > 0 else None,
+            active_command=car.active_command
         )
         new_cars.append(new_car)
     
-    return new_cars
+    return new_cars, overtake_events
 
 
 def calculate_sector(lap_progress: float, track) -> int:
@@ -296,7 +341,7 @@ def create_dnf(car: Car, tick: int, reason: str) -> tuple[Car, Event]:
     event = Event(
         tick=tick,
         lap=car.lap,
-        event_type=EventType.YELLOW_FLAG,
+        event_type=EventType.DNF,
         driver=car.driver,
         description=f"{car.driver} DNF - {reason}"
     )

@@ -30,30 +30,30 @@ TIRE_WEAR_PENALTY = 50 # MAX KM/H LOST ST 100% WEAR
 
 FUEL_WEIGHT_SPEED_PENALTY = 0.03 # KM/H LOST PER KG OF FUEL
 
-# ======================
-# DRS (Drag Reduction System)
-# ======================
+# ---------
+# DRS
+# ---------
 DRS_SPEED_BOOST = 12.0  # km/h extra speed when DRS is open
 DRS_ACTIVATION_GAP = 1.0  # Must be within 1 second of car ahead
 
-# ======================
-# SLIPSTREAM / DRAFTING
-# ======================
+# ---------
+# slipstream
+# ---------
 SLIPSTREAM_RANGE = 0.5  # seconds behind car ahead to get effect
 SLIPSTREAM_MAX_BOOST = 6.0  # km/h maximum boost on straights
 SLIPSTREAM_CORNER_FACTOR = 0.3  # Reduced effect in corners
 
-# ======================
-# ERS (Energy Recovery System)
-# ======================
+# ---------
+# ERS
+# ---------
 ERS_MAX_BATTERY = 4.0  # MJ total capacity
 ERS_DEPLOY_RATE = 0.1  # MJ consumed per tick when deploying
 ERS_HARVEST_RATE = 0.02  # MJ recovered per tick in braking zones
 ERS_SPEED_BOOST = 8.0  # km/h extra when deploying
 
-# ======================
-# DIRTY AIR (Aerodynamic Wake)
-# ======================
+# ---------
+# dirty air
+# ---------
 DIRTY_AIR_RANGE = 2.0  # seconds behind car ahead
 DIRTY_AIR_CORNER_PENALTY = 0.15  # Up to 15% grip loss in corners
 DIRTY_AIR_STRAIGHT_PENALTY = 0.0  # Negligible on straights (slipstream dominates)
@@ -89,9 +89,9 @@ def calculate_dirty_air_penalty(
     else:  # FAST (Straights)
         return 0.0  # Slipstream handles straights
 
-# ======================
-# PHYSICS CALCULATIONS
-# ======================
+# ---------
+# core physics
+# ---------
 
 def calculate_tire_wear(current_wear: float, compound: str, rng, driving_mode: str = "BALANCED") -> float:
     """Calculate new tire wear after one tick
@@ -234,9 +234,9 @@ def calculate_fuel_consumption(current_fuel: float, driving_mode: str = "BALANCE
     return max(new_fuel, 0.0)
 
 
-# ======================
-# DRS CALCULATIONS
-# ======================
+# ---------
+# DRS stuff
+# ---------
 
 def is_in_drs_zone(lap_progress: float, drs_zones: list) -> bool:
     """Check if car is currently in a DRS activation zone."""
@@ -277,9 +277,9 @@ def calculate_drs_boost(drs_active: bool) -> float:
     return DRS_SPEED_BOOST if drs_active else 0.0
 
 
-# ======================
-# SLIPSTREAM CALCULATIONS
-# ======================
+# ---------
+# slipstream calcs
+# ---------
 
 def calculate_slipstream_boost(
     gap_to_car_ahead: float,
@@ -311,9 +311,9 @@ def calculate_slipstream_boost(
         return base_boost
 
 
-# ======================
-# ERS CALCULATIONS
-# ======================
+# ---------
+# ERS calcs
+# ---------
 
 def calculate_ers_deployment(
     battery: float,
@@ -354,9 +354,9 @@ def calculate_ers_harvest(battery: float, sector_type: str) -> float:
     return battery
 
 
-# ======================
-# BLUE FLAG CALCULATIONS
-# ======================
+# ---------
+# blue flags
+# ---------
 
 def should_yield_for_blue_flag(car_lap: int, leader_lap: int) -> bool:
     """
