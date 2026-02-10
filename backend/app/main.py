@@ -146,6 +146,7 @@ def format_race_state(state) -> dict:
             "pit_stops": car.pit_stops,
             "drs_active": car.drs_active,
             "ers_battery": round(car.ers_battery, 2),
+            "ers_deployed": car.ers_deployed,
             "last_lap_time": car.last_lap_time,
             "best_lap_time": car.best_lap_time,
             "gap_to_leader": car.gap_to_leader,
@@ -461,6 +462,28 @@ async def websocket_race(websocket: WebSocket):
                     await manager.broadcast({
                         "type": "update",
                         "data": format_race_state(new_state)
+                    })
+            
+            elif command == "skip_to_lap":
+                # Fast-forward simulation to a target lap
+                target_lap = data.get("lap", 1)
+                if simulation_state["race_state"]:
+                    state = simulation_state["race_state"]
+                    rng = simulation_state["rng"]
+                    max_ticks = 50000  # Safety limit
+                    ticks_done = 0
+                    
+                    while ticks_done < max_ticks:
+                        leader = min(state.cars, key=lambda c: c.position)
+                        if leader.lap >= target_lap or leader.lap >= state.meta.laps_total:
+                            break
+                        state = tick(state, rng, driver_commands=simulation_state["driver_commands"])
+                        ticks_done += 1
+                    
+                    simulation_state["race_state"] = state
+                    await websocket.send_json({
+                        "type": "update",
+                        "data": format_race_state(state)
                     })
             
             elif command == "driver_command":
