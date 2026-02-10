@@ -1,4 +1,16 @@
-function Controls({ isPlaying, onPlay, onPause, onStep, speed, onSpeedChange, onRaceControl, onWeatherControl }) {
+import { useState } from 'react'
+
+function Controls({ isPlaying, onPlay, onPause, onStep, speed, onSpeedChange, onRaceControl, onWeatherControl, onSkipToLap }) {
+    const [skipLap, setSkipLap] = useState('')
+
+    const handleSkip = () => {
+        const lap = parseInt(skipLap, 10)
+        if (lap > 0 && onSkipToLap) {
+            onSkipToLap(lap)
+            setSkipLap('')
+        }
+    }
+
     return (
         <div className="controls">
             <div className="controls-main">
@@ -25,6 +37,24 @@ function Controls({ isPlaying, onPlay, onPause, onStep, speed, onSpeedChange, on
                             {s}x
                         </button>
                     ))}
+                </div>
+            </div>
+
+            <div className="controls-skip">
+                <span className="speed-label">SKIP TO LAP</span>
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    <input
+                        type="number"
+                        min="1"
+                        value={skipLap}
+                        onChange={(e) => setSkipLap(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSkip()}
+                        placeholder="LAP"
+                        className="skip-input"
+                    />
+                    <button className="btn btn-small btn-skip" onClick={handleSkip}>
+                        ⏩ GO
+                    </button>
                 </div>
             </div>
 
