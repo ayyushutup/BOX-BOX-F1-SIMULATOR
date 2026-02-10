@@ -63,7 +63,11 @@ class EventType(str, Enum):
     GREEN_FLAG = "GREEN_FLAG"
     PIT_STOP = "PIT_STOP"
     PIT_OUT = "PIT_OUT"
-    PIT_IN = "PIT_IN"   
+    PIT_IN = "PIT_IN"
+    OVERTAKE = "OVERTAKE"
+    DNF = "DNF"
+    FASTEST_LAP = "FASTEST_LAP"
+    MODE_CHANGE = "MODE_CHANGE"
 
 class Meta(BaseModel):
     """Simulation metadata for replay and determinism"""
