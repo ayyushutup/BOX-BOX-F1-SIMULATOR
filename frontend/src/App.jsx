@@ -135,6 +135,13 @@ function App() {
     }
   }, [])
 
+  const handleSkipToLap = useCallback((lap) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      console.log(`Skipping to lap ${lap}`)
+      wsRef.current.send(JSON.stringify({ command: 'skip_to_lap', lap }))
+    }
+  }, [])
+
   // Team Principal: Send driver command (BOX_THIS_LAP, PUSH, CONSERVE)
   const sendDriverCommand = useCallback((driver, cmd) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -168,7 +175,7 @@ function App() {
     <div className="app-container">
       {/* Race View Header with Back Button */}
       <div className="race-controls-header" style={{ position: 'absolute', top: 10, left: 10, zIndex: 100 }}>
-        <button onClick={handleBackToDashboard} style={{ padding: '8px 16px', background: '#333', color: 'white', border: 'none', cursor: 'pointer' }}>
+        <button className="btn-back" onClick={handleBackToDashboard}>
           ← BACK TO TRACKS
         </button>
       </div>
@@ -234,6 +241,7 @@ function App() {
           onSpeedChange={handleSpeedChange}
           onRaceControl={handleRaceControl}
           onWeatherControl={handleWeatherControl}
+          onSkipToLap={handleSkipToLap}
         />
       </div>
     </div>

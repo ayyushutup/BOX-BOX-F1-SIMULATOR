@@ -1,5 +1,4 @@
 import React from 'react'
-import { useState } from 'react'
 
 // Team colors for F1 teams
 const TEAM_COLORS = {
@@ -32,11 +31,19 @@ function PositionTower({ cars, onSelectDriver, selectedDriver }) {
     }
 
     // Strategy icons
-    const STRATEGY_ICONS = {
+    const MODE_ICONS = {
         'PUSH': '🚀',
-        'BALANCED': '⚖️',
+        'BALANCED': '',
         'CONSERVE': '🍃'
     }
+
+    // Find fastest lap holder
+    const bestLapTimes = sortedCars
+        .filter(c => c.best_lap_time !== null && c.best_lap_time !== undefined)
+        .map(c => ({ driver: c.driver, time: c.best_lap_time }))
+    const fastestLapHolder = bestLapTimes.length > 0
+        ? bestLapTimes.reduce((a, b) => a.time < b.time ? a : b).driver
+        : null
 
     return (
         <div className="tower">
@@ -53,9 +60,10 @@ function PositionTower({ cars, onSelectDriver, selectedDriver }) {
                 <span style={{ width: '70px', textAlign: 'right', paddingRight: '8px' }}>LAP</span>
             </div>
             <div className="tower-body" style={{ overflowY: 'auto', flex: 1 }}>
-                {sortedCars.map((car, index) => {
+                {sortedCars.map((car) => {
                     const isLeader = car.position === 1
                     const isSelected = selectedDriver === car.driver
+                    const isFastestLap = fastestLapHolder === car.driver
 
                     let gapText = '-'
                     if (gapMode === 'INTERVAL') {
@@ -73,12 +81,20 @@ function PositionTower({ cars, onSelectDriver, selectedDriver }) {
                     const tireColor = TIRE_COLORS[car.tire_compound] || '#FFF'
                     const tireLetter = car.tire_compound ? car.tire_compound[0] : 'U'
 
+                    // Border color priority: selected > fastest lap > battle > default
+                    let borderColor = 'transparent'
+                    if (isSelected) borderColor = 'var(--red)'
+                    else if (isFastestLap) borderColor = 'var(--purple)'
+                    else if (isBattle) borderColor = 'var(--yellow)'
+
+                    const modeIcon = MODE_ICONS[car.driving_mode] || ''
+
                     return (
                         <div
                             key={car.driver}
                             className={`tower-row ${isSelected ? 'selected' : ''}`}
                             onClick={() => onSelectDriver && onSelectDriver(car.driver)}
-                            style={{ cursor: 'pointer', borderLeft: isSelected ? '4px solid var(--red)' : (isBattle ? '4px solid var(--yellow)' : '4px solid transparent') }}
+                            style={{ cursor: 'pointer', borderLeft: `4px solid ${borderColor}` }}
                         >
                             <div
                                 className="tower-position"
@@ -86,9 +102,16 @@ function PositionTower({ cars, onSelectDriver, selectedDriver }) {
                             >
                                 {car.position}
                             </div>
-                            <div className="tower-driver" style={{ color: isSelected ? 'white' : 'var(--text-main)' }}>
+                            <div className="tower-driver" style={{ color: isSelected ? 'white' : 'var(--text-primary)' }}>
                                 {car.driver}
                                 {car.in_pit_lane && <span className="pit-badge">PIT</span>}
+                                {car.drs_active && <span className="drs-badge">DRS</span>}
+                                {modeIcon && <span className="mode-icon">{modeIcon}</span>}
+                                {car.active_command && (
+                                    <span className="cmd-badge">
+                                        {car.active_command === 'BOX_THIS_LAP' ? '📦' : ''}
+                                    </span>
+                                )}
                             </div>
 
                             {/* Tire Info */}
@@ -100,13 +123,14 @@ function PositionTower({ cars, onSelectDriver, selectedDriver }) {
                             </div>
 
                             {/* Gap/Interval */}
-                            <div className="tower-interval" style={{ color: isBattle && gapMode === 'INTERVAL' ? 'var(--yellow)' : 'var(--text-main)', fontWeight: isBattle ? 700 : 400 }}>
+                            <div className="tower-interval" style={{ color: isBattle && gapMode === 'INTERVAL' ? 'var(--yellow)' : 'var(--text-secondary)', fontWeight: isBattle ? 700 : 400 }}>
                                 {gapText}
                             </div>
 
                             {/* Last Lap */}
-                            <div className="tower-interval" style={{ width: '70px', color: 'var(--text-dim)' }}>
+                            <div className="tower-interval" style={{ width: '70px', color: isFastestLap ? 'var(--purple)' : 'var(--text-tertiary)' }}>
                                 {lastLapText}
+                                {isFastestLap && <span style={{ marginLeft: '2px', fontSize: '0.6rem' }}>⚡</span>}
                             </div>
                         </div>
                     )
