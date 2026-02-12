@@ -67,8 +67,8 @@ You **ARE** building:
 
 ---
 
-## 🚀 PHASE A — Deterministic Race Engine
-**⏱️ Weeks 1–3**
+## 🚀 PHASE A — Deterministic Race Engine ✅ COMPLETE
+**⏱️ Weeks 1–3** — *Completed Feb 6, 2026*
 
 ### Goal
 A full race can run **headless, replayable, and believable**.
@@ -120,9 +120,9 @@ class RaceState(BaseModel):
 ```
 
 #### 2. Seeded RNG
-- [ ] Implement deterministic random number generator
-- [ ] Use seed for all randomness (weather changes, tire wear variance, incidents)
-- [ ] **Test:** Same seed → same race every time
+- [x] Implement deterministic random number generator
+- [x] Use seed for all randomness (weather changes, tire wear variance, incidents)
+- [x] **Test:** Same seed → same race every time
 
 #### 3. tick(state, controls) → newState
 ```python
@@ -139,16 +139,18 @@ def tick(current_state: RaceState, controls: Controls) -> RaceState:
     return new_state
 ```
 
-- [ ] Tick resolution: **100ms simulation time**
-- [ ] Physics calculations:
+- [x] Tick resolution: **100ms simulation time**
+- [x] Physics calculations:
   - Speed based on tire wear, fuel load, sector type
   - Tire degradation (compound-specific curves)
   - Fuel consumption (mass impact on lap time)
-- [ ] Lap completion detection
-- [ ] Sector transitions
+- [x] Lap completion detection
+- [x] Sector transitions
+- [x] **Extended Physics:** DRS, ERS, Slipstream, Dirty Air, Driving Modes, Blue Flags
 
 #### 4. Synthetic Tracks, Drivers, Weather
-- [ ] Create 3-5 **fake** tracks with realistic properties
+- [x] Create 3-5 **fake** tracks with realistic properties
+  - Monaco, Monza, Spa, Silverstone — all with SVG track maps
   ```python
   TRACK_MONACO = Track(
       id="monaco_synthetic",
@@ -161,21 +163,22 @@ def tick(current_state: RaceState, controls: Controls) -> RaceState:
       weather=Weather(rain_prob=0.1, temp=25)
   )
   ```
-- [ ] Create **synthetic** driver profiles (skill levels, consistency)
-- [ ] Weather system (probability-based rain, affects grip)
+- [x] Create **synthetic** driver profiles (20 drivers, skill levels 0.85–0.99, track affinity)
+- [x] Weather system (probability-based rain, affects grip, drifts over time)
 
 #### 5. Event System
-- [ ] Safety Car (SC) triggers:
+- [x] Safety Car (SC) triggers:
   - Random incidents (probability-based)
   - Manual trigger via controls
   - Car bunching algorithm
-- [ ] Virtual Safety Car (VSC):
+- [x] Virtual Safety Car (VSC):
   - Speed limit enforcement (40% reduction)
   - Delta time calculations
-- [ ] Pit stops:
+- [x] Pit stops:
   - Time loss calculation (stationary + in/out laps)
-  - Tire strategy logic
-- [ ] DNFs (mechanical failures, crashes)
+  - Tire strategy logic (AI + Team Principal commands)
+- [x] DNFs (mechanical failures, crashes)
+- [x] **Lap time tracking** (last lap, best lap, fastest lap detection)
 
 #### 6. CLI Output
 ```bash
@@ -199,10 +202,10 @@ $ run_race(seed=42)
 ```
 
 ### Definition of Done
-✅ Same seed → same race  
-✅ No UI required  
-✅ ML completely absent  
-✅ You trust the output  
+✅ Same seed → same race — **VERIFIED** (test_determinism.py)  
+✅ No UI required — **VERIFIED** (CLI runner works headless)  
+✅ ML completely absent — **VERIFIED** (ML added in Phase C only)  
+✅ You trust the output — **VERIFIED** (43 tests pass, physics verified)  
 
 ### 🚫 DO NOT BUILD
 - ❌ UI
@@ -213,8 +216,8 @@ $ run_race(seed=42)
 
 ---
 
-## 🎮 PHASE B — Simulation Viewer
-**⏱️ Weeks 4–5**
+## 🎮 PHASE B — Simulation Viewer ✅ COMPLETE
+**⏱️ Weeks 4–5** — *Completed Feb 9, 2026*
 
 ### Goal
 **See the race, not control it.** UI is a viewer, nothing more.
@@ -222,23 +225,23 @@ $ run_race(seed=42)
 ### What to Build
 
 #### 1. SVG Track Renderer
-- [ ] Component: `TrackMap.tsx`
-  - Input: `track.sectors`
-  - Output: SVG path representing circuit
-  - Simplified representation (no need for exact geometry)
-- [ ] Sector highlighting (color-coded)
-- [ ] Start/finish line marker
+- [x] Component: `TrackMap.jsx`
+  - Input: `track.sectors` + `track.svg_path`
+  - Output: SVG path representing circuit with real track outlines
+  - Dynamic viewboxes per track
+- [x] Sector highlighting (color-coded)
+- [x] Start/finish line marker
 
 #### 2. Car Tokens
-- [ ] Component: `CarToken.tsx`
+- [x] Component: `CarToken.jsx`
   - Positioned based on `car.lap_progress` (0.0 - 1.0)
   - Color-coded by team
   - Shows driver abbreviation
-- [ ] Smooth animation between ticks
-- [ ] Responsive to state changes only
+- [x] Smooth animation between ticks
+- [x] Responsive to state changes only
 
 #### 3. Play / Pause / Step Controls
-- [ ] Component: `SimulationControls.tsx`
+- [x] Component: `SimulationControls.jsx`
   - Play button → WebSocket starts sending state updates
   - Pause button → freezes at current tick
   - Step button → advance by 1 tick
@@ -246,16 +249,16 @@ $ run_race(seed=42)
   - Playback speed (1x, 2x, 5x, 10x)
 
 #### 4. Race State Modifiers
-- [ ] Component: `RaceControls.tsx`
+- [x] Component: `RaceControls.jsx`
   - Deploy Safety Car button
   - Deploy VSC button
-  - Weather controls (trigger rain)
-  - Chaos mode (increase incident probability)
-- [ ] **Critical:** These send Controls to backend, which creates new state
+  - Weather controls (trigger rain/dry)
+  - ~~Chaos mode~~ (not implemented)
+- [x] **Critical:** These send Controls to backend, which creates new state
   - UI **never** mutates state directly
 
 #### 5. Position Tower
-- [ ] Component: `PositionTower.tsx`
+- [x] Component: `PositionTower.jsx`
   - Real-time standings
   - Gap to leader
   - Gap to car ahead
@@ -263,7 +266,7 @@ $ run_race(seed=42)
   - Tire compound/age display
 
 #### 6. Event Log
-- [ ] Component: `EventLog.tsx`
+- [x] Component: `EventLog.jsx`
   - Chronological list of events
   - Lap X: Safety Car deployed
   - Lap X: HAM pitted (SOFT → MEDIUM)
@@ -297,9 +300,14 @@ One screen: **Simulation Hub**
 - Turning UI off doesn't break sim
 
 ### Definition of Done
-✅ You can pause, step, replay  
-✅ Visuals explain what's happening  
-✅ UI is read-only (except controls)  
+✅ You can pause, step, replay — **VERIFIED**  
+✅ Visuals explain what's happening — **VERIFIED**  
+✅ UI is read-only (except controls) — **VERIFIED**  
+
+### Also Completed (Beyond Original Scope)
+- [x] **Interactive Strategy (Team Principal Mode)** — BOX_THIS_LAP, PUSH, CONSERVE commands
+- [x] **DRS/ERS/Slipstream visualization** in position tower
+- [x] **Animated standings** with smooth position transitions
 
 ### 🚫 DO NOT BUILD
 - ❌ ML predictions panel
@@ -309,8 +317,8 @@ One screen: **Simulation Hub**
 
 ---
 
-## 🧠 PHASE C — ML Interpreter
-**⏱️ Weeks 6–7**
+## 🧠 PHASE C — ML Interpreter 🔄 IN PROGRESS
+**⏱️ Weeks 6–7** — *Data pipeline complete, training done, API integrated*
 
 ### Goal
 **Predictions that feel earned, not magical.**
@@ -318,41 +326,28 @@ One screen: **Simulation Hub**
 ### What to Build
 
 #### 1. ML Reads RaceState Snapshots
-- [ ] Feature extraction from RaceState:
+- [x] Feature extraction from RaceState (`feature_extractor.py`):
   ```python
   def extract_features(state: RaceState) -> pd.DataFrame:
-      """
-      Convert RaceState into ML-ready features
-      """
-      features = []
+      # Now uses refactored Car sub-models
       for car in state.cars:
           features.append({
-              "driver": car.driver,
-              "position": car.position,
-              "lap": car.lap,
-              "lap_progress": car.lap_progress,
-              "tire_age": car.tire_state.age,
-              "tire_wear": car.tire_state.wear,
-              "tire_compound": car.tire_state.compound,
-              "fuel_remaining": car.fuel,
-              "pit_stops": car.pit_stops,
-              "laps_remaining": state.meta.laps_total - car.lap,
-              # Relative features
-              "gap_to_leader": ...,
-              "gap_to_ahead": ...,
+              "driver": car.identity.driver,
+              "position": car.timing.position,
+              "tire_wear": car.telemetry.tire_state.wear,
+              "sc_active": state.race_control == RaceControl.SAFETY_CAR,
+              ...
           })
-      return pd.DataFrame(features)
   ```
 
 #### 2. Model Training (Synthetic Data Only)
-- [ ] Generate 1000+ synthetic races with different seeds
-- [ ] Extract snapshots at key moments:
-  - Every 10 laps
-  - After pit stops
-  - After Safety Car periods
-- [ ] Train classification models:
-  - **Win probability** (multi-class)
-  - **Podium probability** (top 3 finish)
+- [x] Generate 1000+ synthetic races with different seeds (`generate_training_data.py`)
+- [x] Extract snapshots at key moments:
+  - Every 50 ticks (~5 seconds sim time)
+  - Labeled with final positions
+- [x] Train classification models:
+  - **Win probability** (binary) — `win_model.joblib`
+  - **Podium probability** (top 3 finish) — `podium_model.joblib`
   - **Points probability** (top 10 finish)
 
 #### 3. Model Architecture
@@ -401,12 +396,12 @@ class RacePredictionModel:
 ```
 
 #### 5. API Endpoints
-- [ ] `POST /api/ml/predict` - Get predictions for current state
+- [x] `POST /api/ml/predict` - Get predictions for current state
 - [ ] `GET /api/ml/confidence-curve/{simulation_id}` - Confidence over time
 - [ ] `POST /api/ml/retrain` - Re-train on new synthetic races
 
 #### 6. UI Components
-- [ ] Component: `PredictionPanel.tsx`
+- [x] Component: `PredictionPanel.jsx`
   - Win probability bars (top 5 drivers)
   - Podium probability
   - Confidence score visualization
@@ -714,26 +709,39 @@ Build it right. Build it deterministic. Build it explainable.
 
 ---
 
-## 🔄 Next Steps (This Week)
+## 🏗️ Architecture Refactor (Feb 12, 2026)
 
-1. **Initialize project structure**
-   ```
-   box-box/
-   ├── backend/
-   │   └── app/
-   │       ├── models/race_state.py
-   │       ├── simulation/engine.py
-   │       └── main.py
-   ├── frontend/
-   │   └── src/
-   └── docker-compose.yml
-   ```
+A senior-level design review led to a structural refactoring of the core models:
 
-2. **Define RaceState schema in Pydantic**
+### Car Model Decomposition
+The monolithic `Car` model was split into 5 focused sub-models:
+| Sub-model | Fields | Purpose |
+|-----------|--------|---------|
+| `CarIdentity` | `driver`, `team` | Immutable identity |
+| `CarTelemetry` | `speed`, `fuel`, `lap_progress`, `tire_state` | Real-time sensor data |
+| `CarSystems` | `drs_active`, `ers_battery`, `ers_deployed` | Electronic systems |
+| `CarStrategy` | `driving_mode`, `active_command` | Strategy decisions |
+| `CarTiming` | `position`, `lap`, `sector`, gaps, lap times | Timing & classification |
 
-3. **Implement basic tick() function**
+### RaceControl Enum
+Replaced 3 boolean flags with a single enum for mutually exclusive states:
+`GREEN | YELLOW | VSC | SAFETY_CAR | RED_FLAG`
 
-4. **Write first test: same seed → same race**
+### Schema Version
+Added `schema_version: int` to `RaceState` for future persistence/replay compatibility.
+
+### Files Updated (11 total)
+`race_state.py`, `data.py`, `engine.py`, `data_logger.py`, `run.py`, `run_race.py`, `main.py`, `feature_extractor.py`, `generate_training_data.py`, `test_events.py`, `test_determinism.py`
+
+**All 43 tests pass after refactor.**
+
+---
+
+## 🔄 Next Steps
+
+1. **Complete Phase C** — Live ML updates during simulation, confidence curves
+2. **Deferred refactors** — `cars` dict + `classification` list, `Event.payload`, Track enums
+3. **Begin Phase D** — FastF1 data ingestion and reality calibration
 
 ---
 
