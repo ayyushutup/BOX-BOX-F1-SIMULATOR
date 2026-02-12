@@ -5,7 +5,9 @@ Fake tracks, drivers, and teams for testing.
 
 from ..models.race_state import (
     TireCompound, CarStatus, SectorType,
-    TireState, Weather, Sector, Meta, Car, Track, RaceState, DRSZone
+    TireState, Weather, Sector, Meta, Car, Track, RaceState, DRSZone,
+    CarIdentity, CarTelemetry, CarSystems, CarStrategy, CarTiming, RaceControl,
+    DrivingMode
 )
 
 
@@ -180,33 +182,64 @@ DRIVERS = [
 
 
 # ============================================
+# TRACK AFFINITY (Context-Aware Skills)
+# ============================================
+
+# Multipliers: 1.0 = Normal, >1.0 = Strong, <1.0 = Weak
+TRACK_AFFINITY = {
+    "VER": {"monaco": 1.02, "spa": 1.05, "monza": 1.01, "silverstone": 1.02},  # Max: Beast everywhere, esp Spa
+    "PER": {"monaco": 1.05, "spa": 0.95, "monza": 0.98, "silverstone": 0.96},  # Checo: King of Streets
+    "LEC": {"monaco": 0.90, "spa": 1.01, "monza": 1.03, "silverstone": 1.01},  # Charles: Cursed at home
+    "HAM": {"monaco": 0.98, "spa": 1.02, "monza": 1.00, "silverstone": 1.04},  # Lewis: King of Silverstone
+    "NOR": {"monaco": 1.01, "spa": 0.99, "monza": 1.01, "silverstone": 1.03},  # Lando: Strong at home
+    "RIC": {"monaco": 1.03, "spa": 0.96, "monza": 1.02, "silverstone": 0.97},  # Daniel: Loves Monza/Monaco
+    "ALO": {"monaco": 1.02, "spa": 1.01, "monza": 0.99, "silverstone": 1.00},  # Fernando: Wiley fox
+}
+
+
+# ============================================
 # FACTORY FUNCTIONS
 # ============================================
 
 def create_initial_cars(
+    track_id: str,
     compound: TireCompound = TireCompound.MEDIUM,
     fuel_kg: float = 100.0
 ) -> list[Car]:
-    """Create all 20 cars in starting grid order."""
+    """Create all 20 cars in starting grid order with track-specific adjustments."""
     cars = []
+    
+    # Extract clean track key (e.g., "monaco_synthetic" -> "monaco")
+    track_key = track_id.split("_")[0] if "_" in track_id else track_id
+    
     for i, driver_info in enumerate(DRIVERS):
+        base_skill = driver_info.get("skill", 0.90)
+        
+        # Apply Track Affinity
+        affinity = TRACK_AFFINITY.get(driver_info["driver"], {}).get(track_key, 1.0)
+        effective_skill = min(0.999, base_skill * affinity) # Cap at 0.999
         car = Car(
-            driver=driver_info["driver"],
-            team=driver_info["team"],
-            position=i + 1,  # 1-indexed position
-            lap=0,
-            sector=0,
-            lap_progress=0.0,
-            speed=0.0,
-            fuel=fuel_kg,
-            tire_state=TireState(
-                compound=compound,
-                age=0,
-                wear=0.0
+            identity=CarIdentity(
+                driver=driver_info["driver"],
+                team=driver_info["team"],
+            ),
+            telemetry=CarTelemetry(
+                speed=0.0,
+                fuel=fuel_kg,
+                lap_progress=0.0,
+                tire_state=TireState(compound=compound, age=0, wear=0.0),
+                dirty_air_effect=0.0,
+            ),
+            systems=CarSystems(),
+            strategy=CarStrategy(),
+            timing=CarTiming(
+                position=i + 1,
+                lap=0,
+                sector=0,
             ),
             pit_stops=0,
             status=CarStatus.RACING,
-            driver_skill=driver_info.get("skill", 0.90),
+            driver_skill=effective_skill,
         )
         cars.append(car)
     return cars
@@ -242,10 +275,8 @@ def create_race_state(
             laps_total=laps
         ),
         track=track,
-        cars=create_initial_cars(tire_compound, fuel_kg),
+        cars=create_initial_cars(track_id, tire_compound, fuel_kg),
         events=[],
-        safety_car_active=False,
-        vsc_active=False,
-        red_flag_active=False,
+        race_control=RaceControl.GREEN,
         drs_enabled=False
     )

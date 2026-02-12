@@ -24,10 +24,10 @@ def test_same_seed_same_race():
     assert state1.meta.tick == state2.meta.tick
     
     for car1, car2 in zip(state1.cars, state2.cars):
-        assert car1.lap == car2.lap
-        assert car1.lap_progress == car2.lap_progress
-        assert car1.speed == car2.speed
-        assert car1.fuel == car2.fuel
+        assert car1.timing.lap == car2.timing.lap
+        assert car1.telemetry.lap_progress == car2.telemetry.lap_progress
+        assert car1.telemetry.speed == car2.telemetry.speed
+        assert car1.telemetry.fuel == car2.telemetry.fuel
 
 
 def test_different_seed_different_race():
@@ -46,7 +46,7 @@ def test_different_seed_different_race():
     # At least some cars should have different speeds
     different = False
     for car1, car2 in zip(state1.cars, state2.cars):
-        if car1.speed != car2.speed:
+        if car1.telemetry.speed != car2.telemetry.speed:
             different = True
             break
     

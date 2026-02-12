@@ -7,6 +7,7 @@ import argparse
 from .data import create_race_state
 from .engine import tick
 from .rng import SeededRNG
+from ..models.race_state import RaceControl
 
 
 def main():
@@ -37,10 +38,10 @@ def main():
         tick_count += 1
         
         # Print lap updates when leader completes a lap
-        leader = next((c for c in state.cars if c.position == 1), state.cars[0])
+        leader = next((c for c in state.cars if c.timing.position == 1), state.cars[0])
         
-        if leader.lap > current_lap:
-            current_lap = leader.lap
+        if leader.timing.lap > current_lap:
+            current_lap = leader.timing.lap
             print_lap_summary(state, current_lap)
             
             # Print any new events from this lap
@@ -49,7 +50,7 @@ def main():
                     print(f"    └─ {event.description}")
         
         # Check race finished
-        if leader.lap >= args.laps:
+        if leader.timing.lap >= args.laps:
             print_final_results(state)
             print(f"\n📊 Simulation completed in {tick_count} ticks")
             break
@@ -58,15 +59,15 @@ def main():
 def print_lap_summary(state, lap):
     """Print summary of current lap."""
     racing_cars = [c for c in state.cars if c.status.value == "RACING"]
-    top5 = sorted(racing_cars, key=lambda c: c.position)[:5]
+    top5 = sorted(racing_cars, key=lambda c: c.timing.position)[:5]
     
-    drivers = " | ".join([f"{c.driver} P{c.position}" for c in top5])
+    drivers = " | ".join([f"{c.identity.driver} P{c.timing.position}" for c in top5])
     
     # Add race condition indicators
     flags = ""
-    if state.safety_car_active:
+    if state.race_control == RaceControl.SAFETY_CAR:
         flags += " 🚗 SC"
-    if state.vsc_active:
+    if state.race_control == RaceControl.VSC:
         flags += " 🟡 VSC"
     
     print(f"Lap {lap:3d}: {drivers}{flags}")
@@ -78,22 +79,22 @@ def print_final_results(state):
     print("🏁 RACE FINISHED")
     print("=" * 50)
     
-    sorted_cars = sorted(state.cars, key=lambda c: (c.status.value != "RACING", c.position))
+    sorted_cars = sorted(state.cars, key=lambda c: (c.status.value != "RACING", c.timing.position))
     
     for car in sorted_cars:
         if car.status.value == "RACING":
-            icon = "🏆" if car.position <= 3 else "🏁"
-            print(f"  {car.position:2d}. {car.driver} ({car.team}) {icon}")
+            icon = "🏆" if car.timing.position <= 3 else "🏁"
+            print(f"  {car.timing.position:2d}. {car.identity.driver} ({car.identity.team}) {icon}")
         else:
-            print(f"  -- {car.driver} ({car.team}) ❌ DNF")
+            print(f"  -- {car.identity.driver} ({car.identity.team}) ❌ DNF")
     
     # Find fastest lap
-    racing_cars = [c for c in state.cars if c.best_lap_time is not None]
+    racing_cars = [c for c in state.cars if c.timing.best_lap_time is not None]
     if racing_cars:
-        fastest = min(racing_cars, key=lambda c: c.best_lap_time)
-        minutes = int(fastest.best_lap_time // 60)
-        seconds = fastest.best_lap_time % 60
-        print(f"\n⏱️  Fastest Lap: {fastest.driver} - {minutes}:{seconds:06.3f}")
+        fastest = min(racing_cars, key=lambda c: c.timing.best_lap_time)
+        minutes = int(fastest.timing.best_lap_time // 60)
+        seconds = fastest.timing.best_lap_time % 60
+        print(f"\n⏱️  Fastest Lap: {fastest.identity.driver} - {minutes}:{seconds:06.3f}")
 
 
 if __name__ == "__main__":

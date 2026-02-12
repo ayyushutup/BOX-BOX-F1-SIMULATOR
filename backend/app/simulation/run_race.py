@@ -7,6 +7,7 @@ import argparse
 from .data import create_race_state, TRACKS
 from .engine import tick
 from .rng import SeededRNG
+from ..models.race_state import RaceControl
 
 
 def format_time(ms: int) -> str:
@@ -20,10 +21,10 @@ def format_time(ms: int) -> str:
 def print_standings(state, show_all: bool = False):
     """Print current race standings."""
     # Sort cars by position
-    sorted_cars = sorted(state.cars, key=lambda c: c.position)
+    sorted_cars = sorted(state.cars, key=lambda c: c.timing.position)
     
     print(f"\n{'='*60}")
-    print(f"  LAP {sorted_cars[0].lap}/{state.meta.laps_total}  |  Time: {format_time(state.meta.timestamp)}")
+    print(f"  LAP {sorted_cars[0].timing.lap}/{state.meta.laps_total}  |  Time: {format_time(state.meta.timestamp)}")
     print(f"{'='*60}")
     print(f"  {'POS':<4} {'DRIVER':<6} {'TEAM':<20} {'TIRE':<6} {'LIFE':>6}")
     print(f"  {'-'*50}")
@@ -31,12 +32,11 @@ def print_standings(state, show_all: bool = False):
     cars_to_show = sorted_cars if show_all else sorted_cars[:10]
     
     for car in cars_to_show:
-        tire = car.tire_state.compound.value[:3]  # First 3 letters
-        # Show remaining tire life (100% = fresh, 0% = worn out)
-        tire_life = (1.0 - car.tire_state.wear) * 100
+        tire = car.telemetry.tire_state.compound.value[:3]
+        tire_life = (1.0 - car.telemetry.tire_state.wear) * 100
         life_str = f"{tire_life:.1f}%"
         status = "" if car.status.value == "RACING" else f" [{car.status.value}]"
-        print(f"  {car.position:<4} {car.driver:<6} {car.team:<20} {tire:<6} {life_str:>6}{status}")
+        print(f"  {car.timing.position:<4} {car.identity.driver:<6} {car.identity.team:<20} {tire:<6} {life_str:>6}{status}")
     
     if not show_all and len(sorted_cars) > 10:
         print(f"  ... and {len(sorted_cars) - 10} more drivers")
@@ -73,9 +73,9 @@ def run_race(
         state = tick(state, rng)
         
         # Check if leader completed a new lap
-        leader = min(state.cars, key=lambda c: c.position)
-        if leader.lap > current_lap:
-            current_lap = leader.lap
+        leader = min(state.cars, key=lambda c: c.timing.position)
+        if leader.timing.lap > current_lap:
+            current_lap = leader.timing.lap
             if show_every_lap:
                 print_standings(state, show_all_drivers)
     
@@ -92,20 +92,20 @@ def is_race_finished(state) -> bool:
     """Check if the race is complete."""
     if not state.cars:
         return True
-    leader = min(state.cars, key=lambda c: c.position)
-    return leader.lap >= state.meta.laps_total
+    leader = min(state.cars, key=lambda c: c.timing.position)
+    return leader.timing.lap >= state.meta.laps_total
 
 
 def print_final_results(state):
     """Print final race results."""
-    sorted_cars = sorted(state.cars, key=lambda c: c.position)
+    sorted_cars = sorted(state.cars, key=lambda c: c.timing.position)
     
     print(f"\n  {'POS':<4} {'DRIVER':<6} {'TEAM':<20} {'STOPS':<6} {'STATUS':<10}")
     print(f"  {'-'*50}")
     
     for car in sorted_cars:
         status = car.status.value
-        print(f"  {car.position:<4} {car.driver:<6} {car.team:<20} {car.pit_stops:<6} {status:<10}")
+        print(f"  {car.timing.position:<4} {car.identity.driver:<6} {car.identity.team:<20} {car.pit_stops:<6} {status:<10}")
     
     print(f"\n  Total simulation ticks: {state.meta.tick}")
     print(f"  Simulation time: {format_time(state.meta.timestamp)}")

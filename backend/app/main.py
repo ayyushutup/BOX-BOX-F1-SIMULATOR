@@ -12,11 +12,21 @@ from typing import Optional
 from .simulation.data import create_race_state, TRACKS
 from .simulation.engine import tick
 from .simulation.rng import SeededRNG
+from .models.race_state import RaceControl
+from .api import ml
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Background task to run the race simulation
+    asyncio.create_task(run_simulation_loop())
+    yield
 
 app = FastAPI(
     title="BOX-BOX F1 Simulation API",
     description="Real-time F1 race simulation engine",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS middleware for frontend connection
@@ -27,6 +37,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# REGISTER ROUTERS
+app.include_router(ml.router, prefix="/api/ml", tags=["Machine Learning"])
 
 
 # =====================
@@ -45,8 +58,7 @@ class RaceStateResponse(BaseModel):
     total_laps: int
     time_ms: int
     tick: int
-    safety_car_active: bool
-    vsc_active: bool
+    race_control: str
     drs_enabled: bool
     is_finished: bool
     cars: list
@@ -84,8 +96,8 @@ async def run_simulation_loop():
                 speed = simulation_state.get("speed", 1)
                 
                 # Check if race finished
-                leader = min(state.cars, key=lambda c: c.position)
-                if leader.lap >= state.meta.laps_total:
+                leader = min(state.cars, key=lambda c: c.timing.position)
+                if leader.timing.lap >= state.meta.laps_total:
                     simulation_state["is_running"] = False
                     await manager.broadcast({
                         "type": "finished",
@@ -96,8 +108,6 @@ async def run_simulation_loop():
                 # Advance simulation by 'speed' ticks
                 for _ in range(speed):
                     state = tick(state, rng, driver_commands=simulation_state["driver_commands"])
-                    # If race happens to finish mid-tick-batch, checking next loop is fine
-                    # But for safety we could break early, though unnecessary for now
                 
                 simulation_state["race_state"] = state
                 
@@ -115,44 +125,42 @@ async def run_simulation_loop():
             await asyncio.sleep(1)
 
 
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(run_simulation_loop())
-
-
 # =====================
 # HELPER FUNCTIONS
 # =====================
 
 def format_race_state(state) -> dict:
     """Convert RaceState to frontend-friendly format"""
-    leader = min(state.cars, key=lambda c: c.position)
-    is_finished = leader.lap >= state.meta.laps_total
+    leader = min(state.cars, key=lambda c: c.timing.position)
+    is_finished = leader.timing.lap >= state.meta.laps_total
+    
+    sc_active = state.race_control == RaceControl.SAFETY_CAR
+    vsc_active = state.race_control == RaceControl.VSC
     
     cars = []
-    for car in sorted(state.cars, key=lambda c: c.position):
+    for car in sorted(state.cars, key=lambda c: c.timing.position):
         cars.append({
-            "driver": car.driver,
-            "team": car.team,
-            "position": car.position,
-            "lap": car.lap,
-            "sector": car.sector,
-            "lap_progress": car.lap_progress,
-            "speed": round(car.speed, 1),
+            "driver": car.identity.driver,
+            "team": car.identity.team,
+            "position": car.timing.position,
+            "lap": car.timing.lap,
+            "sector": car.timing.sector,
+            "lap_progress": car.telemetry.lap_progress,
+            "speed": round(car.telemetry.speed, 1),
             "status": car.status.value,
-            "tire_compound": car.tire_state.compound.value,
-            "tire_wear": round(car.tire_state.wear * 100, 1),
-            "tire_age": car.tire_state.age,
+            "tire_compound": car.telemetry.tire_state.compound.value,
+            "tire_wear": round(car.telemetry.tire_state.wear * 100, 1),
+            "tire_age": car.telemetry.tire_state.age,
             "pit_stops": car.pit_stops,
-            "drs_active": car.drs_active,
-            "ers_battery": round(car.ers_battery, 2),
-            "ers_deployed": car.ers_deployed,
-            "last_lap_time": car.last_lap_time,
-            "best_lap_time": car.best_lap_time,
-            "gap_to_leader": car.gap_to_leader,
-            "interval": car.interval,
-            "driving_mode": car.driving_mode.value,
-            "active_command": car.active_command,
+            "drs_active": car.systems.drs_active,
+            "ers_battery": round(car.systems.ers_battery, 2),
+            "ers_deployed": car.systems.ers_deployed,
+            "last_lap_time": car.timing.last_lap_time,
+            "best_lap_time": car.timing.best_lap_time,
+            "gap_to_leader": car.timing.gap_to_leader,
+            "interval": car.timing.interval,
+            "driving_mode": car.strategy.driving_mode.value,
+            "active_command": car.strategy.active_command,
             "in_pit_lane": car.in_pit_lane
         })
     
@@ -168,13 +176,14 @@ def format_race_state(state) -> dict:
         })
     
     return {
-        "lap": leader.lap,
+        "lap": leader.timing.lap,
         "total_laps": state.meta.laps_total,
         "time_ms": state.meta.timestamp,
         "tick": state.meta.tick,
-        "safety_car_active": state.safety_car_active,
-        "vsc_active": state.vsc_active,
+        "safety_car_active": sc_active,
+        "vsc_active": vsc_active,
         "drs_enabled": state.drs_enabled,
+        "race_control": state.race_control.value,
         "is_finished": is_finished,
         "cars": cars,
         "events": events,
@@ -285,8 +294,8 @@ def advance_step(ticks: int = 10):
     rng = simulation_state["rng"]
     
     for _ in range(ticks):
-        leader = min(state.cars, key=lambda c: c.position)
-        if leader.lap >= state.meta.laps_total:
+        leader = min(state.cars, key=lambda c: c.timing.position)
+        if leader.timing.lap >= state.meta.laps_total:
             break
         state = tick(state, rng)
     
@@ -367,8 +376,6 @@ async def websocket_race(websocket: WebSocket):
                 await websocket.send_json({"type": "paused"})
             
             elif command == "step":
-                # Single step (manually advance state, loop will pick up next change if running)
-                # Ensure we don't conflict if it IS running, though "step" usually implies paused
                 if simulation_state["race_state"]:
                     state = simulation_state["race_state"]
                     rng = simulation_state["rng"]
@@ -397,24 +404,20 @@ async def websocket_race(websocket: WebSocket):
                     updates = {}
                     
                     if event_type == "SC":
-                        new_val = not current.safety_car_active
-                        updates["safety_car_active"] = new_val
-                        if new_val:
-                            updates["vsc_active"] = False
+                        if current.race_control == RaceControl.SAFETY_CAR:
+                            updates["race_control"] = RaceControl.GREEN
+                        else:
+                            updates["race_control"] = RaceControl.SAFETY_CAR
                             
                     elif event_type == "VSC":
-                        new_val = not current.vsc_active
-                        updates["vsc_active"] = new_val
-                        if new_val:
-                            updates["safety_car_active"] = False
+                        if current.race_control == RaceControl.VSC:
+                            updates["race_control"] = RaceControl.GREEN
+                        else:
+                            updates["race_control"] = RaceControl.VSC
 
                     elif event_type == "weather":
-                        # Handle weather change
                         weather_type = data.get("value")
                         current_track = current.track
-                        
-                        # We need to update the weather on the track
-                        # Track is pydantic model, use copy/update
                         current_weather = current_track.weather
                         new_weather_vals = {}
                         
@@ -431,13 +434,11 @@ async def websocket_race(websocket: WebSocket):
                                 "wind_speed": 5.0
                              }
                              
-                        # Update weather object
                         try:
                             new_weather = current_weather.model_copy(update=new_weather_vals)
                         except AttributeError:
                              new_weather = current_weather.copy(update=new_weather_vals)
                              
-                        # Update track
                         try:
                             new_track = current_track.model_copy(update={"weather": new_weather})
                         except AttributeError:
@@ -446,11 +447,6 @@ async def websocket_race(websocket: WebSocket):
                         updates["track"] = new_track
                             
                     # Apply updates
-                    # Apply updates
-                    # Use model_copy if pydantic v2, or copy for v1. Safe bet is copy(update=...) for API compatibility often
-                    # But if we are on v2, copy is deprecated.
-                    # Let's try basic copy first, if it fails we can fix. 
-                    # actually most recent pydantic uses model_copy.
                     try:
                         new_state = current.model_copy(update=updates)
                     except AttributeError:
@@ -465,17 +461,16 @@ async def websocket_race(websocket: WebSocket):
                     })
             
             elif command == "skip_to_lap":
-                # Fast-forward simulation to a target lap
                 target_lap = data.get("lap", 1)
                 if simulation_state["race_state"]:
                     state = simulation_state["race_state"]
                     rng = simulation_state["rng"]
-                    max_ticks = 50000  # Safety limit
+                    max_ticks = 50000
                     ticks_done = 0
                     
                     while ticks_done < max_ticks:
-                        leader = min(state.cars, key=lambda c: c.position)
-                        if leader.lap >= target_lap or leader.lap >= state.meta.laps_total:
+                        leader = min(state.cars, key=lambda c: c.timing.position)
+                        if leader.timing.lap >= target_lap or leader.timing.lap >= state.meta.laps_total:
                             break
                         state = tick(state, rng, driver_commands=simulation_state["driver_commands"])
                         ticks_done += 1
@@ -487,7 +482,6 @@ async def websocket_race(websocket: WebSocket):
                     })
             
             elif command == "driver_command":
-                # Team Principal command issued to a specific driver
                 driver = data.get("driver")
                 cmd = data.get("cmd")
                 
@@ -495,7 +489,6 @@ async def websocket_race(websocket: WebSocket):
                     simulation_state["driver_commands"][driver] = cmd
                     print(f"[TEAM RADIO] Command queued: {driver} -> {cmd}")
                     
-                    # Acknowledge command
                     await websocket.send_json({
                         "type": "command_ack",
                         "driver": driver,
@@ -504,8 +497,6 @@ async def websocket_race(websocket: WebSocket):
     
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-        # We generally don't stop the race just because one client disconnected,
-        # but if it's single player, maybe we should? For now keeping it running is safer.
 
 if __name__ == "__main__":
     import uvicorn
