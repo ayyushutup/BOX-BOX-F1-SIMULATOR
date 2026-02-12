@@ -76,47 +76,48 @@ class Meta(BaseModel):
     timestamp: int = Field(ge=0, description="SIMULATION TIME IN MILLISECONDS")
     laps_total: int = Field(gt=0, description="Total laps in the race")
 
-class Car(BaseModel):
-    """Complete state of a car during a race."""    
-    #IDENTITY
-    driver: str = Field(min_length=3, max_length=3, description="Driver name")
-    team: str = Field(description="Team name")
-    #POSITION
-    position: int = Field(ge=1, le=22, description="Current Race Position")
-    lap: int = Field(ge=0, description="Current lap number")
-    sector: int = Field(ge=0, le=2, description="Current sector number")
-    lap_progress: float = Field(ge=0.0, le=1.0, description="progress through the lap(0% to 100%)")
-    #PERFORMANCE
-    speed: float = Field(ge=0.0, description="km/h")
-    fuel: float = Field(ge=0.0, description="fuel in kg")
+class CarIdentity(BaseModel):
+    driver: str = Field(min_length=3, max_length=3)
+    team: str
+
+class CarTelemetry(BaseModel):
+    speed: float = Field(ge=0.0)
+    fuel: float = Field(ge=0.0)
+    lap_progress: float = Field(ge=0.0, le=1.0)
     tire_state: TireState
-    pit_stops: int = Field(ge=0, description="Number of pit stops made")
-    #STATUS
+    dirty_air_effect: float = Field(default=0.0)
+
+class CarSystems(BaseModel):
+    drs_active: bool = Field(default=False)
+    ers_battery: float = Field(ge=0.0, le=4.0, default=4.0)
+    ers_deployed: bool = Field(default=False)
+
+class CarStrategy(BaseModel):
+    driving_mode: DrivingMode = Field(default=DrivingMode.BALANCED)
+    active_command: str | None = Field(default=None)
+
+class CarTiming(BaseModel):
+    position: int = Field(ge=1, le=22)
+    lap: int = Field(ge=0)
+    sector: int = Field(ge=0, le=2)
+    gap_to_leader: float | None = Field(default=None)
+    interval: float | None = Field(default=None)
+    last_lap_time: float | None = Field(default=None)
+    best_lap_time: float | None = Field(default=None)
+    lap_start_tick: int = Field(default=0)
+
+class Car(BaseModel):
+    identity: CarIdentity
+    telemetry: CarTelemetry
+    systems: CarSystems
+    strategy: CarStrategy
+    timing: CarTiming
+    # Standalone fields that don't fit neatly into a sub-model
+    pit_stops: int = Field(ge=0)
     status: CarStatus = CarStatus.RACING
-    #SKILL
-    driver_skill: float = Field(ge=0.0, le=1.0, default=0.90, description="Driver skill level (0.0 to 1.0)")
+    driver_skill: float = Field(ge=0.0, le=1.0, default=0.90)
     in_pit_lane: bool = Field(default=False)
-    pit_lane_progress: float = Field(ge=0.0, le=1.0, default=0.0)
-    # DRS
-    drs_active: bool = Field(default=False, description="DRS currently open")
-    # ERS (Energy Recovery System)
-    ers_battery: float = Field(ge=0.0, le=4.0, default=4.0, description="ERS battery in MJ (0-4)")
-    ers_deployed: bool = Field(default=False, description="Currently deploying ERS")
-    # LAP TIMES
-    last_lap_time: float | None = Field(default=None, description="Last lap time in seconds")
-    best_lap_time: float | None = Field(default=None, description="Best lap time in seconds")
-    lap_start_tick: int = Field(default=0, description="Tick when current lap started")
-    
-    # PHYSICS EXTENSIONS
-    driving_mode: DrivingMode = Field(default=DrivingMode.BALANCED, description="Current driving strategy")
-    dirty_air_effect: float = Field(default=0.0, description="Speed penalty from dirty air (0.0 to 1.0)")
-    
-    # TIMING GAPS
-    gap_to_leader: float | None = Field(default=None, description="Gap to leader in seconds")
-    interval: float | None = Field(default=None, description="Gap to car ahead in seconds")
-    
-    # TEAM PRINCIPAL COMMANDS
-    active_command: str | None = Field(default=None, description="Active command from Team Principal (BOX_THIS_LAP, PUSH, CONSERVE)")
+    pit_lane_progress: float = Field(ge=0.0, le=1.0, default=0.0)    
     
 class Track(BaseModel):
     """describes the Circuit where the race is happening"""
@@ -127,8 +128,7 @@ class Track(BaseModel):
     weather: Weather
     drs_zones: List[DRSZone] = Field(default_factory=list, description="DRS activation zones")
     svg_path: str = Field(default="", description="SVG path d-attribute for track map")
-    view_box: str = Field(default="0 0 500 500", description="SVG viewBox attribute")
-    
+    view_box: str = Field(default="0 0 500 500", description="SVG viewBox attribute") 
     # Dashboard Metadata
     abrasion: str = Field(default="MEDIUM", description="Tire abrasion level (LOW, MEDIUM, HIGH)")
     downforce: str = Field(default="MEDIUM", description="Required downforce (LOW, MEDIUM, HIGH)")
@@ -142,6 +142,14 @@ class Track(BaseModel):
     country_code: str = Field(default="XX", description="ISO 3166-1 alpha-2 country code")
     avg_lap_time: str = Field(default="0:00.000", description="Average lap time for display")
     pit_lap_window: str = Field(default="0-0", description="Expected pit stop window")
+
+class RaceControl(str, Enum):
+    """Mutually exclusive race control states"""
+    GREEN = "GREEN"
+    YELLOW = "YELLOW"
+    VSC = "VSC"
+    SAFETY_CAR = "SAFETY_CAR"
+    RED_FLAG = "RED_FLAG"
 
 class Event(BaseModel):
     """Event that occurred during the race"""
@@ -158,20 +166,17 @@ class RaceState(BaseModel):
     This is THE product. Everything else (UI, ML, analytics) 
     is a projection or interpretation of this state.
     """
+    schema_version: int = Field(default=1, description="Schema version for persistence/replay")
+    
     # Core components
     meta: Meta
     track: Track
     cars: list[Car] = Field(description="All cars in the race, ordered by position")
     events: list[Event] = Field(default_factory=list, description="Chronological list of race events")
     
-    # Race condition flags
-    safety_car_active: bool = Field(default=False)
-    vsc_active: bool = Field(default=False)
-    red_flag_active: bool = Field(default=False)
+    # Race control (mutually exclusive states)
+    race_control: RaceControl = Field(default=RaceControl.GREEN)
     drs_enabled: bool = Field(default=False)
-    
-
-
 
 
 
