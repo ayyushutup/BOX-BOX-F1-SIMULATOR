@@ -14,6 +14,7 @@ from .simulation.engine import tick
 from .simulation.rng import SeededRNG
 from .models.race_state import RaceControl
 from .api import ml
+from .ml.predictor import RacePredictor
 from contextlib import asynccontextmanager
 
 @asynccontextmanager
@@ -40,6 +41,9 @@ app.add_middleware(
 
 # REGISTER ROUTERS
 app.include_router(ml.router, prefix="/api/ml", tags=["Machine Learning"])
+from .api import reality
+app.include_router(reality.router, prefix="/api/reality", tags=["Reality Injection"])
+from .api import reality
 
 
 # =====================
@@ -77,8 +81,14 @@ simulation_state = {
     "is_running": False,
     "config": None,
     "speed": 1,
-    "driver_commands": {}  # {"VER": "BOX_THIS_LAP", "HAM": "PUSH"}
+    "driver_commands": {},  # {"VER": "BOX_THIS_LAP", "HAM": "PUSH"}
+    "predictions": None,           # Latest ML predictions dict
+    "prediction_history": [],      # List of {tick, lap, confidence, win_prob} snapshots
+    "last_prediction_tick": 0,     # Tick when we last ran ML
 }
+
+# Singleton predictor - loads models once at startup
+ml_predictor = RacePredictor()
 
 
 # =====================
@@ -111,11 +121,35 @@ async def run_simulation_loop():
                 
                 simulation_state["race_state"] = state
                 
-                # Broadcast update
-                await manager.broadcast({
+                # Run ML predictions every ~50 ticks (5s sim time)
+                predictions_payload = None
+                current_tick = state.meta.tick
+                if current_tick - simulation_state["last_prediction_tick"] >= 50:
+                    try:
+                        preds = ml_predictor.predict(state)
+                        if preds:
+                            simulation_state["predictions"] = preds
+                            simulation_state["last_prediction_tick"] = current_tick
+                            predictions_payload = preds
+                            # Store snapshot for confidence curve
+                            simulation_state["prediction_history"].append({
+                                "tick": current_tick,
+                                "lap": preds.get("lap", 0),
+                                "confidence": preds.get("confidence", 0),
+                                "win_prob": preds.get("win_prob", {})
+                            })
+                    except Exception as e:
+                        print(f"ML prediction error (non-fatal): {e}")
+                
+                # Broadcast update (with predictions if available)
+                broadcast_data = {
                     "type": "update",
                     "data": format_race_state(state)
-                })
+                }
+                if predictions_payload:
+                    broadcast_data["predictions"] = predictions_payload
+                
+                await manager.broadcast(broadcast_data)
             
             # Control update rate (100ms = 10 updates/sec)
             await asyncio.sleep(0.1)
@@ -250,6 +284,11 @@ def init_race(config: RaceConfig):
     simulation_state["config"] = config
     simulation_state["is_running"] = False
     
+    # Reset ML state on new race
+    simulation_state["predictions"] = None
+    simulation_state["prediction_history"] = []
+    simulation_state["last_prediction_tick"] = 0
+    
     return {
         "status": "initialized",
         "track": TRACKS[config.track_id].name,
@@ -301,6 +340,23 @@ def advance_step(ticks: int = 10):
     
     simulation_state["race_state"] = state
     return format_race_state(state)
+
+
+# =====================
+# ML CONFIDENCE CURVE
+# =====================
+
+@app.get("/api/ml/confidence-curve")
+def get_confidence_curve():
+    """Get prediction confidence curve over time for the current race"""
+    history = simulation_state.get("prediction_history", [])
+    if not history:
+        return {"error": "No prediction history available. Start a race first."}
+    
+    return {
+        "snapshots": history,
+        "total_snapshots": len(history)
+    }
 
 
 # =====================
@@ -359,6 +415,9 @@ async def websocket_race(websocket: WebSocket):
                 simulation_state["config"] = config
                 simulation_state["is_running"] = False
                 simulation_state["speed"] = 1
+                simulation_state["predictions"] = None
+                simulation_state["prediction_history"] = []
+                simulation_state["last_prediction_tick"] = 0
                 
                 await websocket.send_json({
                     "type": "init",

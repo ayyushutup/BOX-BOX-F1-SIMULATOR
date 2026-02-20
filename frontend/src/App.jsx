@@ -4,13 +4,20 @@ import TrackMap from './components/TrackMap'
 import PositionTower from './components/PositionTower'
 import EventLog from './components/EventLog'
 import Controls from './components/Controls'
-import RaceControlStatus from './components/RaceControlStatus'
+import RaceControlStatus from './components/RaceControlStatus';
+import SimVsReality from './components/SimVsReality';
 import TelemetryPanel from './components/TelemetryPanel'
+import PredictionPanel from './components/PredictionPanel'
+import AIEngineer from './components/AIEngineer'
+import IncidentPredictor from './components/IncidentPredictor'
 import TrackSelection from './features/TrackSelection'
+import RaceTimeline from './components/RaceTimeline'
+import { useSoundEffects } from './hooks/useSoundEffects'
 import './index.css'
 
 function App() {
   const [view, setView] = useState('dashboard') // 'dashboard' or 'race'
+  const [raceTab, setRaceTab] = useState('race') // 'race', 'telemetry', 'reality'
   const [availableTracks, setAvailableTracks] = useState([])
   const [selectedTrackId, setSelectedTrackId] = useState(null)
   const [selectedDriver, setSelectedDriver] = useState(null)
@@ -19,8 +26,12 @@ function App() {
   const [isConnected, setIsConnected] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
   const [raceState, setRaceState] = useState(null)
-  const [speed, setSpeed] = useState(1) // 1x by default
+  const [predictions, setPredictions] = useState(null)
+  const [speed, setSpeed] = useState(1)
+  const [soundEnabled, setSoundEnabled] = useState(true)
+  const [logCollapsed, setLogCollapsed] = useState(true)
   const wsRef = useRef(null)
+  const { processEvents } = useSoundEffects(soundEnabled)
 
   // Fetch available tracks on load
   useEffect(() => {
@@ -56,6 +67,14 @@ function App() {
 
       if (message.type === 'init' || message.type === 'update' || message.type === 'state') {
         setRaceState(message.data)
+        // Process sound effects for new events
+        if (message.data?.events) {
+          processEvents(message.data.events)
+        }
+        // Extract predictions if piggybacked on update
+        if (message.predictions) {
+          setPredictions(message.predictions)
+        }
       } else if (message.type === 'finished') {
         setRaceState(message.data)
         setIsPlaying(false)
@@ -88,6 +107,7 @@ function App() {
     setIsPlaying(false)
     setView('dashboard')
     setRaceState(null)
+    setPredictions(null)
   }
 
   const handlePlay = useCallback(() => {
@@ -112,10 +132,7 @@ function App() {
 
   const handleSpeedChange = useCallback((newSpeed) => {
     setSpeed(newSpeed)
-    // If running, update speed dynamically (optional enhancement for backend)
-    // For now, just set state, next 'start' command will pick it up if we toggle logic
-    // Or we can send a speed update command if backend supported it.
-    // Simpler: restart with new speed
+    // If running, update speed dynamically
     if (isPlaying && wsRef.current) {
       wsRef.current.send(JSON.stringify({ command: 'start', speed: newSpeed }))
     }
@@ -173,10 +190,18 @@ function App() {
 
   return (
     <div className="app-container">
-      {/* Race View Header with Back Button */}
-      <div className="race-controls-header" style={{ position: 'absolute', top: 10, left: 10, zIndex: 100 }}>
+      {/* Race View Header with Back Button + Sound Toggle */}
+      <div className="race-controls-header" style={{ position: 'absolute', top: 10, left: 10, zIndex: 100, display: 'flex', gap: '8px' }}>
         <button className="btn-back" onClick={handleBackToDashboard}>
           ← BACK TO TRACKS
+        </button>
+        <button
+          className="btn-back"
+          onClick={() => setSoundEnabled(!soundEnabled)}
+          title={soundEnabled ? 'Mute sound effects' : 'Enable sound effects'}
+          style={{ minWidth: '36px', textAlign: 'center' }}
+        >
+          {soundEnabled ? '🔊' : '🔇'}
         </button>
       </div>
 
@@ -186,64 +211,126 @@ function App() {
         time={raceState?.time_ms || 0}
       />
 
-      <main className="main-grid">
-        {/* LEFT: Track Awareness */}
-        <div className="panel track-panel">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <h2 className="panel-title" style={{ marginBottom: 0 }}>TRACK MAP</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontWeight: 900, color: 'var(--text-dim)' }}>{raceState?.track?.name?.toUpperCase()}</span>
-              <button
-                className="btn btn-small"
-                style={{ fontSize: '0.6rem', padding: '4px 8px', background: trackMode === 'ENGINEER' ? 'var(--blue)' : '#333', color: 'white', border: 'none' }}
-                onClick={() => setTrackMode(trackMode === 'SPECTATOR' ? 'ENGINEER' : 'SPECTATOR')}
-              >
-                {trackMode === 'SPECTATOR' ? 'VIEW: ENG' : 'VIEW: SPEC'}
-              </button>
+      {/* TABS CONTAINER */}
+      <div className="w-full h-full flex flex-col relative">
+        <div style={{ position: 'absolute', top: '10px', right: '20px', zIndex: 50, display: 'flex', gap: '5px', background: 'rgba(0,0,0,0.5)', padding: '5px', borderRadius: '8px' }}>
+          <button
+            onClick={() => setRaceTab('race')}
+            style={{ padding: '5px 10px', borderRadius: '4px', border: 'none', background: raceTab === 'race' ? 'var(--red)' : 'transparent', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            Live Race
+          </button>
+          <button
+            onClick={() => setRaceTab('telemetry')}
+            style={{ padding: '5px 10px', borderRadius: '4px', border: 'none', background: raceTab === 'telemetry' ? 'var(--red)' : 'transparent', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            Telemetry
+          </button>
+          <button
+            onClick={() => setRaceTab('reality')}
+            style={{ padding: '5px 10px', borderRadius: '4px', border: 'none', background: raceTab === 'reality' ? 'var(--red)' : 'transparent', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            Reality Check
+          </button>
+        </div>
+
+        {/* TAB CONTENTS */}
+
+        {/* VIEW 1: RACE */}
+        {raceTab === 'race' && (
+          <main className="main-grid w-full h-full pt-12">
+            {/* LEFT: Track Awareness */}
+            <div className="panel track-panel">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h2 className="panel-title" style={{ marginBottom: 0 }}>TRACK MAP</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontWeight: 900, color: 'var(--text-dim)' }}>{raceState?.track?.name?.toUpperCase()}</span>
+                  <button
+                    className="btn btn-small"
+                    style={{ fontSize: '0.6rem', padding: '4px 8px', background: trackMode === 'ENGINEER' ? 'var(--blue)' : '#333', color: 'white', border: 'none' }}
+                    onClick={() => setTrackMode(trackMode === 'SPECTATOR' ? 'ENGINEER' : 'SPECTATOR')}
+                  >
+                    {trackMode === 'SPECTATOR' ? 'VIEW: ENG' : 'VIEW: SPEC'}
+                  </button>
+                </div>
+              </div>
+              <TrackMap cars={raceState?.cars || []} track={raceState?.track} mode={trackMode} />
+            </div>
+
+            {/* CENTER: Decision Making */}
+            <div className="panel tower-panel">
+              <h2 className="panel-title">LIVE STANDINGS</h2>
+              <PositionTower
+                cars={raceState?.cars || []}
+                onSelectDriver={setSelectedDriver}
+                selectedDriver={selectedDriver}
+              />
+            </div>
+
+            {/* RIGHT: Context & Safety */}
+            <div className="panel context-panel" style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
+              <RaceControlStatus raceState={raceState} />
+              <PredictionPanel predictions={predictions} raceState={raceState} />
+              <AIEngineer raceState={raceState} selectedDriver={selectedDriver} />
+              <IncidentPredictor raceState={raceState} />
+
+              <div className="events-wrapper" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', ...(logCollapsed ? {} : { flex: 1 }) }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setLogCollapsed(!logCollapsed)}>
+                  <h2 className="panel-title" style={{ marginBottom: 0 }}>RACE LOG</h2>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', padding: '2px 8px' }}>{logCollapsed ? '▸ SHOW' : '▾ HIDE'}</span>
+                </div>
+                {!logCollapsed && <EventLog events={raceState?.events || []} />}
+              </div>
+            </div>
+          </main>
+        )}
+
+        {/* VIEW 2: TELEMETRY */}
+        {raceTab === 'telemetry' && (
+          <div className="w-full h-full pt-12 p-4">
+            <TelemetryPanel
+              selectedDriver={selectedDriver}
+              car={raceState?.cars?.find(c => c.driver === selectedDriver)}
+              sendCommand={sendDriverCommand}
+            />
+          </div>
+        )}
+
+        {/* VIEW 3: REALITY CHECK */}
+        {raceTab === 'reality' && (
+          <div className="w-full h-full pt-12 p-4 overflow-auto">
+            <SimVsReality />
+          </div>
+        )}
+
+
+        {/* Global Bottom Controls (Always visible in Race/Telemetry views) */}
+        {view === 'race' && raceTab !== 'reality' && (
+          <div className="bottom-panel-container flex flex-col gap-2 fixed bottom-4 left-1/2 -translate-x-1/2 w-[95%] max-w-[1200px] z-50">
+            <RaceTimeline
+              totalLaps={raceState?.total_laps || 0}
+              currentLap={raceState?.lap || 0}
+              events={raceState?.events || []}
+              onSkipToLap={handleSkipToLap}
+            />
+            <div className="bottom-panel">
+              <Controls
+                isPlaying={isPlaying}
+                onPlay={handlePlay}
+                onPause={handlePause}
+                onStep={handleStep}
+                speed={speed}
+                onSpeedChange={handleSpeedChange}
+                onRaceControl={handleRaceControl}
+                onWeatherControl={handleWeatherControl}
+                onSkipToLap={handleSkipToLap}
+                onSimulateStrategy={() => console.log("Strategy Sim Open")} // Placeholder for future
+              />
             </div>
           </div>
-          <TrackMap cars={raceState?.cars || []} track={raceState?.track} mode={trackMode} />
-        </div>
-
-        {/* CENTER: Decision Making */}
-        <div className="panel tower-panel">
-          <h2 className="panel-title">LIVE STANDINGS</h2>
-          <PositionTower
-            cars={raceState?.cars || []}
-            onSelectDriver={setSelectedDriver}
-            selectedDriver={selectedDriver}
-          />
-        </div>
-
-        {/* RIGHT: Context & Safety */}
-        <div className="panel context-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <RaceControlStatus raceState={raceState} />
-
-          <div className="events-wrapper" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <h2 className="panel-title">RACE LOG</h2>
-            <EventLog events={raceState?.events || []} />
-          </div>
-        </div>
-      </main>
-
-      <div className="bottom-panel">
-        <TelemetryPanel
-          selectedDriver={selectedDriver}
-          car={raceState?.cars?.find(c => c.driver === selectedDriver)}
-          sendCommand={sendDriverCommand}
-        />
-        <Controls
-          isPlaying={isPlaying}
-          onPlay={handlePlay}
-          onPause={handlePause}
-          onStep={handleStep}
-          speed={speed}
-          onSpeedChange={handleSpeedChange}
-          onRaceControl={handleRaceControl}
-          onWeatherControl={handleWeatherControl}
-          onSkipToLap={handleSkipToLap}
-        />
+        )}
       </div>
+
     </div>
   )
 }

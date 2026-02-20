@@ -2,8 +2,9 @@
 import joblib
 import pandas as pd
 import os
-from typing import Dict, List
-from app.models.race_state import RaceState
+from typing import Dict, List, Optional
+from app.models.race_state import RaceState, RaceControl
+from app.ml.monte_carlo import MonteCarloRaceSimulator
 
 # Configuration
 MODEL_DIR = "app/ml/models"
@@ -21,6 +22,7 @@ class RacePredictor:
         if not self.initialized:
             self.win_model = None
             self.podium_model = None
+            self.mc_simulator = MonteCarloRaceSimulator(n_simulations=1000)
             self.load_models()
             self.initialized = True
             
@@ -41,20 +43,18 @@ class RacePredictor:
             ]))}
 
     def load_models(self):
-        """Load trained models from disk"""
+        """Load trained models from disk (LightGBM + Calibration wrapped in joblib)"""
         try:
             cur_dir = os.path.dirname(os.path.abspath(__file__))
-            # Adjust path to match where models are actually saved relative to this file
             model_path = os.path.join(cur_dir, "models") 
             
-            # Fallback if running from root
             if not os.path.exists(model_path):
                 model_path = "app/ml/models"
 
             print(f"Loading models from {model_path}...")
             self.win_model = joblib.load(os.path.join(model_path, "win_model.joblib"))
             self.podium_model = joblib.load(os.path.join(model_path, "podium_model.joblib"))
-            print("ML Models loaded successfully.")
+            print("ML Models loaded successfully (LightGBM + Calibration).")
         except Exception as e:
             print(f"Failed to load ML models: {e}")
             print("Predictions will be unavailable.")
@@ -62,39 +62,36 @@ class RacePredictor:
     def predict(self, state: RaceState) -> Dict:
         """
         Generate predictions for the current race state.
-        Returns a dictionary with win and podium probabilities.
+        Uses LightGBM + Isotonic Calibration for raw probabilities,
+        then Monte Carlo simulation for win distributions.
         """
         if not self.win_model or not self.podium_model:
             return None
 
-        # 1. Extract Features (Must match training columns EXACTLY)
-        # We process car-by-car
         data = []
         total_laps = state.meta.laps_total
         
         for car in state.cars:
-            # Handle Nones
-            gap_leader = car.gap_to_leader if car.gap_to_leader is not None else 0.0
-            gap_ahead = car.interval if car.interval is not None else 0.0
+            gap_leader = car.timing.gap_to_leader if car.timing.gap_to_leader is not None else 0.0
+            gap_ahead = car.timing.interval if car.timing.interval is not None else 0.0
             
-            # Map Categoricals
-            driver_code = self.driver_map.get(car.driver, -1)
-            team_code = self.team_map.get(car.team, -1)
-            tire_code = self.tire_map.get(car.tire_state.compound.value, -1)
+            driver_code = self.driver_map.get(car.identity.driver, -1)
+            team_code = self.team_map.get(car.identity.team, -1)
+            tire_code = self.tire_map.get(car.telemetry.tire_state.compound.value, -1)
             
             row = {
-                "lap": car.lap,
-                "lap_progress": car.lap_progress,
-                "laps_remaining": total_laps - car.lap,
-                "position": car.position,
-                "speed": car.speed,
+                "lap": car.timing.lap,
+                "lap_progress": car.telemetry.lap_progress,
+                "laps_remaining": total_laps - car.timing.lap,
+                "position": car.timing.position,
+                "speed": car.telemetry.speed,
                 "gap_to_leader": gap_leader,
                 "gap_to_car_ahead": gap_ahead,
-                "tire_age": car.tire_state.age,
-                "tire_wear": car.tire_state.wear,
+                "tire_age": car.telemetry.tire_state.age,
+                "tire_wear": car.telemetry.tire_state.wear,
                 "pit_stops": car.pit_stops,
-                "sc_active": 1 if state.safety_car_active else 0,
-                "vsc_active": 1 if state.vsc_active else 0,
+                "sc_active": 1 if state.race_control == RaceControl.SAFETY_CAR else 0,
+                "vsc_active": 1 if state.race_control == RaceControl.VSC else 0,
                 "drs_enabled": 1 if state.drs_enabled else 0,
                 "tire_compound_code": tire_code, 
                 "team_code": team_code,
@@ -104,7 +101,7 @@ class RacePredictor:
 
         df = pd.DataFrame(data)
         
-        # Ensure column order matches training
+        # Column order MUST match training
         feature_cols = [
             "lap", "lap_progress", "laps_remaining", "position",
             "speed", "gap_to_leader", "gap_to_car_ahead",
@@ -115,29 +112,37 @@ class RacePredictor:
         
         X = df[feature_cols]
 
-        # 2. Predict Probas
+        # Calibrated probabilities from LightGBM
         win_probs = self.win_model.predict_proba(X)
         podium_probs = self.podium_model.predict_proba(X)
         
-        # 3. Format Output
-        # The models return shape (n_cars, 2) where col 1 is probability of class '1' (True)
-        # BUT wait:
-        # - Win model was trained on 'label_win' (1 for winner, 0 for others). 
-        #   So for each car, we want the probability of it being class 1.
-        
-        results = {
-            "lap": state.cars[0].lap,
-            "win_prob": {},
-            "podium_prob": {},
-            "confidence": min(1.0, state.meta.tick / (total_laps * 300)) # Fake confidence ramp
-        }
+        # Build raw probability dicts
+        win_prob_dict = {}
+        podium_prob_dict = {}
         
         for i, car in enumerate(state.cars):
-            # win_probs[i][1] is probability of this car winning
             p_win = float(win_probs[i][1]) if len(win_probs[i]) > 1 else 0.0
             p_podium = float(podium_probs[i][1]) if len(podium_probs[i]) > 1 else 0.0
             
-            results["win_prob"][car.driver] = p_win
-            results["podium_prob"][car.driver] = p_podium
+            win_prob_dict[car.identity.driver] = p_win
+            podium_prob_dict[car.identity.driver] = p_podium
+
+        # Run Monte Carlo simulation on top of calibrated probabilities
+        mc_results = self.mc_simulator.simulate(
+            win_probs=win_prob_dict,
+            podium_probs=podium_prob_dict
+        )
+
+        # Assemble full prediction response
+        results = {
+            "lap": state.cars[0].timing.lap,
+            "win_prob": win_prob_dict,
+            "podium_prob": podium_prob_dict,
+            "confidence": min(1.0, state.meta.tick / (total_laps * 300)),
+            # Monte Carlo fields
+            "mc_win_distribution": mc_results["mc_win_distribution"],
+            "predicted_order": mc_results["predicted_order"],
+            "position_distributions": mc_results["position_distributions"]
+        }
             
         return results

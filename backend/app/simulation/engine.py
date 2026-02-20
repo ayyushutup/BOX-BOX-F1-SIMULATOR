@@ -21,7 +21,7 @@ from .physics import (
     # Dirty Air functions
     calculate_dirty_air_penalty
 )
-from .data_logger import DataLogger
+# DataLogger removed from engine — logging is now external (via LAP_COMPLETE events)
 
 # DNF Constants - REDUCED to prevent too many retirements
 MECHANICAL_FAILURE_PROBABILITY = 0.000005  # Per tick, per car (~0-1 DNFs per race)
@@ -39,8 +39,7 @@ WEATHER_DRIFT_CHANCE = 0.10  # 10% chance per tick to drift
 RAIN_DRIFT_AMOUNT = 0.002    # +/- 0.2% change
 TEMP_DRIFT_AMOUNT = 0.05     # +/- 0.05C change
 
-# Track SC deployment lap (stored externally since state is immutable)
-_sc_start_lap = {}
+# SC tracking now lives inside RaceState.sc_deploy_lap (no globals)
 
 
 def tick(state: RaceState, rng: SeededRNG, driver_commands: dict = None) -> RaceState:
@@ -63,11 +62,7 @@ def tick(state: RaceState, rng: SeededRNG, driver_commands: dict = None) -> Race
     """
     if driver_commands is None:
         driver_commands = {}
-    global _sc_start_lap
-
-    # Initialize Logger (Lazy initialization)
-    if not hasattr(tick, "logger"):
-        tick.logger = DataLogger()
+    # No globals, no logger — pure function
     
     # Update simulation time
     new_tick = state.meta.tick + 1
@@ -80,6 +75,9 @@ def tick(state: RaceState, rng: SeededRNG, driver_commands: dict = None) -> Race
         laps_total=state.meta.laps_total
     )
 
+    # Initialize new events list (must be before weather logic)
+    new_events = state.events.copy()
+
     # Update Weather (Drift)
     new_track = state.track
     if rng.chance(WEATHER_DRIFT_CHANCE):
@@ -88,11 +86,41 @@ def tick(state: RaceState, rng: SeededRNG, driver_commands: dict = None) -> Race
             new_track = state.track.model_copy(update={"weather": new_weather})
         except AttributeError:
             new_track = state.track.copy(update={"weather": new_weather})
+        
+        # Check for significant weather change (Dry <-> Wet)
+        old_rain = state.track.weather.rain_probability
+        new_rain = new_weather.rain_probability
+        wet_threshold = 0.2
+        
+        # Get current lap for event logging (handle case where no leader yet)
+        leader = next(
+            (c for c in state.cars if c.timing.position == 1),
+            None
+        )
+        current_lap = leader.timing.lap if leader else 0
+        
+        if old_rain < wet_threshold and new_rain >= wet_threshold:
+            new_events.append(Event(
+                tick=new_tick,
+                lap=current_lap,
+                event_type=EventType.WEATHER_CHANGE,
+                description="Rain started - Track is wet",
+                payload={"rain_prob": new_rain}
+            ))
+        elif old_rain >= wet_threshold and new_rain < wet_threshold:
+             new_events.append(Event(
+                tick=new_tick,
+                lap=current_lap,
+                event_type=EventType.WEATHER_CHANGE,
+                description="Rain stopped - Track drying",
+                payload={"rain_prob": new_rain}
+            ))
 
     # Check for Safety Car / VSC status
     sc_active = state.race_control == RaceControl.SAFETY_CAR
     vsc_active = state.race_control == RaceControl.VSC
     new_race_control = state.race_control
+    new_sc_deploy_lap = state.sc_deploy_lap
     
     # Get current leader lap for SC duration tracking
     leader = next(
@@ -102,16 +130,13 @@ def tick(state: RaceState, rng: SeededRNG, driver_commands: dict = None) -> Race
     current_lap = leader.timing.lap if leader else 0
     
     # Check if SC should end (after SC_LAPS_DURATION laps)
-    if sc_active:
-        seed_key = state.meta.seed
-        if seed_key in _sc_start_lap:
-            if current_lap >= _sc_start_lap[seed_key] + SC_LAPS_DURATION:
-                new_race_control = RaceControl.GREEN
-                del _sc_start_lap[seed_key]
+    if sc_active and new_sc_deploy_lap is not None:
+        if current_lap >= new_sc_deploy_lap + SC_LAPS_DURATION:
+            new_race_control = RaceControl.GREEN
+            new_sc_deploy_lap = None
     
     # Updating each car
     new_cars = []
-    new_events = state.events.copy()
     
     # Build car lookup for gap calculations
     cars_by_position = {
@@ -131,12 +156,13 @@ def tick(state: RaceState, rng: SeededRNG, driver_commands: dict = None) -> Race
             # DNF can trigger Safety Car (only if not already active)
             if new_race_control == RaceControl.GREEN and rng.chance(0.3):
                 new_race_control = RaceControl.SAFETY_CAR
-                _sc_start_lap[state.meta.seed] = current_lap
+                new_sc_deploy_lap = current_lap
                 new_events.append(Event(
                     tick=new_tick,
                     lap=car.timing.lap,
                     event_type=EventType.SAFETY_CAR,
                     driver=None,
+                    payload={"cause": car.identity.driver},
                     description=f"Safety Car deployed for {car.identity.driver}'s incident"
                 ))
             new_cars.append(updated_car)
@@ -176,9 +202,20 @@ def tick(state: RaceState, rng: SeededRNG, driver_commands: dict = None) -> Race
                 if cmd == "BOX_THIS_LAP" and updated_car.in_pit_lane:
                     del driver_commands[car.identity.driver]
 
-        # LOGGING: If lap completed, log data
+        # Emit LAP_COMPLETE event (replaces internal DataLogger)
         if updated_car.timing.lap > old_lap and updated_car.timing.last_lap_time is not None:
-            tick.logger.log_lap(updated_car, state.track)
+            new_events.append(Event(
+                tick=new_tick,
+                lap=updated_car.timing.lap,
+                event_type=EventType.LAP_COMPLETE,
+                driver=updated_car.identity.driver,
+                payload={
+                    "lap_time": updated_car.timing.last_lap_time,
+                    "tire_compound": updated_car.telemetry.tire_state.compound.value,
+                    "tire_wear": round(updated_car.telemetry.tire_state.wear, 4),
+                    "fuel": round(updated_car.telemetry.fuel, 2),
+                },
+            ))
 
         new_cars.append(updated_car)
 
@@ -202,6 +239,7 @@ def tick(state: RaceState, rng: SeededRNG, driver_commands: dict = None) -> Race
                         lap=car.timing.lap,
                         event_type=EventType.FASTEST_LAP,
                         driver=car.identity.driver,
+                        payload={"time": car.timing.best_lap_time},
                         description=f"{car.identity.driver} sets fastest lap: {car.timing.best_lap_time:.1f}s"
                     ))
 
@@ -216,6 +254,7 @@ def tick(state: RaceState, rng: SeededRNG, driver_commands: dict = None) -> Race
         events=new_events,
         race_control=new_race_control,
         drs_enabled=not is_sc_or_vsc,
+        sc_deploy_lap=new_sc_deploy_lap,
     )
 
 
@@ -253,6 +292,7 @@ def recalculate_positions(cars: list[Car], track, old_positions: dict = None, ti
                     lap=current_lap,
                     event_type=EventType.OVERTAKE,
                     driver=car.identity.driver,
+                    payload={"overtaker": car.identity.driver, "overtaken": overtaken_driver, "position": new_position},
                     description=f"{car.identity.driver} overtakes {overtaken_driver} for P{new_position}"
                 ))
         
@@ -265,27 +305,12 @@ def recalculate_positions(cars: list[Car], track, old_positions: dict = None, ti
             interval = calculate_gap_to_car_ahead(car, car_ahead, track.length)
             gap_to_leader = calculate_gap_to_car_ahead(car, leader, track.length)
             
-        new_car = Car(
-            identity=car.identity,
-            telemetry=car.telemetry,
-            systems=car.systems,
-            strategy=car.strategy,
-            timing=CarTiming(
-                position=new_position,
-                lap=car.timing.lap,
-                sector=car.timing.sector,
-                gap_to_leader=gap_to_leader if i > 0 else None,
-                interval=interval if i > 0 else None,
-                last_lap_time=car.timing.last_lap_time,
-                best_lap_time=car.timing.best_lap_time,
-                lap_start_tick=car.timing.lap_start_tick,
-            ),
-            pit_stops=car.pit_stops,
-            status=car.status,
-            driver_skill=car.driver_skill,
-            in_pit_lane=car.in_pit_lane,
-            pit_lane_progress=car.pit_lane_progress,
-        )
+        new_timing = car.timing.model_copy(update={
+            "position": new_position,
+            "gap_to_leader": gap_to_leader if i > 0 else None,
+            "interval": interval if i > 0 else None,
+        })
+        new_car = car.model_copy(update={"timing": new_timing})
         new_cars.append(new_car)
     
     return new_cars, overtake_events
@@ -325,40 +350,18 @@ def check_for_dnf(car: Car, rng: SeededRNG, tick: int) -> tuple[Car, Event | Non
 
 def create_dnf(car: Car, tick: int, reason: str) -> tuple[Car, Event]:
     """Create a DNF car and event."""
-    dnf_car = Car(
-        identity=car.identity,
-        telemetry=CarTelemetry(
-            speed=0.0,
-            fuel=car.telemetry.fuel,
-            lap_progress=car.telemetry.lap_progress,
-            tire_state=car.telemetry.tire_state,
-            dirty_air_effect=0.0,
-        ),
-        systems=CarSystems(
-            drs_active=False,
-            ers_battery=car.systems.ers_battery,
-            ers_deployed=False,
-        ),
-        strategy=CarStrategy(),
-        timing=CarTiming(
-            position=car.timing.position,
-            lap=car.timing.lap,
-            sector=car.timing.sector,
-            last_lap_time=car.timing.last_lap_time,
-            best_lap_time=car.timing.best_lap_time,
-            lap_start_tick=car.timing.lap_start_tick,
-        ),
-        pit_stops=car.pit_stops,
-        status=CarStatus.DNF,
-        driver_skill=car.driver_skill,
-        in_pit_lane=car.in_pit_lane,
-        pit_lane_progress=car.pit_lane_progress,
-    )
+    dnf_car = car.model_copy(update={
+        "telemetry": car.telemetry.model_copy(update={"speed": 0.0, "dirty_air_effect": 0.0}),
+        "systems": car.systems.model_copy(update={"drs_active": False, "ers_deployed": False}),
+        "strategy": CarStrategy(),
+        "status": CarStatus.DNF,
+    })
     event = Event(
         tick=tick,
         lap=car.timing.lap,
         event_type=EventType.DNF,
         driver=car.identity.driver,
+        payload={"reason": reason},
         description=f"{car.identity.driver} DNF - {reason}"
     )
     return dnf_car, event
@@ -587,41 +590,26 @@ def execute_pit_stop(car: Car, rng: SeededRNG, tick: int) -> tuple[Car, Event]:
     pit_time_penalty = rng.uniform(0.02, 0.03)
     new_progress = max(0, car.telemetry.lap_progress - pit_time_penalty)
     
-    new_car = Car(
-        identity=car.identity,
-        telemetry=CarTelemetry(
-            speed=60.0,
-            fuel=car.telemetry.fuel,
-            lap_progress=new_progress,
-            tire_state=TireState(compound=new_compound, age=0, wear=0.0),
-            dirty_air_effect=0.0,
-        ),
-        systems=CarSystems(
-            drs_active=False,
-            ers_battery=car.systems.ers_battery,
-            ers_deployed=False,
-        ),
-        strategy=CarStrategy(),
-        timing=CarTiming(
-            position=car.timing.position,
-            lap=car.timing.lap,
-            sector=car.timing.sector,
-            last_lap_time=car.timing.last_lap_time,
-            best_lap_time=car.timing.best_lap_time,
-            lap_start_tick=car.timing.lap_start_tick,
-        ),
-        pit_stops=car.pit_stops + 1,
-        status=CarStatus.RACING,
-        driver_skill=car.driver_skill,
-        in_pit_lane=False,
-        pit_lane_progress=0.0,
-    )
+    new_car = car.model_copy(update={
+        "telemetry": car.telemetry.model_copy(update={
+            "speed": 60.0,
+            "lap_progress": new_progress,
+            "tire_state": TireState(compound=new_compound, age=0, wear=0.0),
+            "dirty_air_effect": 0.0,
+        }),
+        "systems": car.systems.model_copy(update={"drs_active": False, "ers_deployed": False}),
+        "strategy": CarStrategy(),
+        "pit_stops": car.pit_stops + 1,
+        "in_pit_lane": False,
+        "pit_lane_progress": 0.0,
+    })
     
     pit_event = Event(
         tick=tick,
         lap=car.timing.lap,
         event_type=EventType.PIT_STOP,
         driver=car.identity.driver,
+        payload={"compound": new_compound.value},
         description=f"{car.identity.driver} pits for {new_compound.value} tires"
     )
     

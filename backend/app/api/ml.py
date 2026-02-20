@@ -1,8 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 from app.ml.predictor import RacePredictor
-from app.models.race_state import RaceState, Meta, Car, TireState, Track, Weather, TireCompound, Sector, SectorType
+from app.models.race_state import (
+    RaceState, Meta, Car, Track, Weather, Sector, SectorType,
+    TireState, TireCompound, RaceControl,
+    CarIdentity, CarTelemetry, CarSystems, CarStrategy, CarTiming
+)
 
 router = APIRouter()
 predictor = RacePredictor()
@@ -23,18 +27,20 @@ class FrontendCar(BaseModel):
     gap_to_leader: Optional[float] = None
     interval: Optional[float] = None
     
-    # Allow extra fields
     class Config:
         extra = "ignore"
 
 class FrontendState(BaseModel):
     tick: int
     total_laps: int
-    safety_car_active: bool
-    vsc_active: bool
-    drs_enabled: bool
+    race_control: str = "GREEN"
+    drs_enabled: bool = False
     cars: List[FrontendCar]
     
+    # Legacy fields from old broadcasts
+    safety_car_active: Optional[bool] = None
+    vsc_active: Optional[bool] = None
+
     class Config:
         extra = "ignore"
 
@@ -43,18 +49,19 @@ class PredictionResponse(BaseModel):
     win_prob: Dict[str, float]
     podium_prob: Dict[str, float]
     confidence: float
+    # Monte Carlo simulation results
+    mc_win_distribution: Optional[Dict[str, float]] = None
+    predicted_order: Optional[List[str]] = None
+    position_distributions: Optional[Dict[str, Dict[int, float]]] = None
 
 @router.post("/predict", response_model=PredictionResponse)
 def get_predictions(data: FrontendState):
     """
     Get win and podium probabilities.
-    Accepts frontend simplified state and converts to internal RaceState for the predictor.
+    Accepts frontend state and converts to internal RaceState for the predictor.
     """
     try:
-        # 1. Reconstruct minimal RaceState for Predictor
-        # We only need fields that predictor.py actually uses
-        
-        # Mock Track/Weather (predictor doesn't currently use them, but RaceState requires them)
+        # Mock Track/Weather (predictor doesn't use them, but RaceState requires them)
         mock_track = Track(
             id="mock", name="mock", length=5000, 
             sectors=[
@@ -67,39 +74,53 @@ def get_predictions(data: FrontendState):
         
         cars = []
         for f_car in data.cars:
-            # Map simplified car to internal Car model
-            # Note: tire_wear in frontend is 0-100, backend is 0.0-1.0
+            # Construct refactored Car with sub-models
             car = Car(
-                driver=f_car.driver,
-                team=f_car.team,
-                position=f_car.position,
-                lap=f_car.lap,
-                sector=0, # unused by predictor
-                lap_progress=f_car.lap_progress,
-                speed=f_car.speed,
-                fuel=0, # unused by predictor currently
-                tire_state=TireState(
-                    compound=TireCompound(f_car.tire_compound),
-                    age=f_car.tire_age,
-                    wear=f_car.tire_wear / 100.0 
+                identity=CarIdentity(
+                    driver=f_car.driver,
+                    team=f_car.team
                 ),
-                pit_stops=f_car.pit_stops,
-                gap_to_leader=f_car.gap_to_leader,
-                interval=f_car.interval
+                telemetry=CarTelemetry(
+                    speed=f_car.speed,
+                    fuel=0,
+                    lap_progress=f_car.lap_progress,
+                    tire_state=TireState(
+                        compound=TireCompound(f_car.tire_compound),
+                        age=f_car.tire_age,
+                        wear=f_car.tire_wear / 100.0
+                    )
+                ),
+                systems=CarSystems(drs_active=f_car.drs_active),
+                strategy=CarStrategy(),
+                timing=CarTiming(
+                    position=f_car.position,
+                    lap=f_car.lap,
+                    sector=0,
+                    gap_to_leader=f_car.gap_to_leader,
+                    interval=f_car.interval
+                ),
+                pit_stops=f_car.pit_stops
             )
             cars.append(car)
 
+        # Determine race control state
+        rc = RaceControl.GREEN
+        if data.race_control:
+            try:
+                rc = RaceControl(data.race_control)
+            except ValueError:
+                pass
+        # Backwards compat: honour legacy boolean fields if race_control wasn't explicit
+        if rc == RaceControl.GREEN and data.safety_car_active:
+            rc = RaceControl.SAFETY_CAR
+        elif rc == RaceControl.GREEN and data.vsc_active:
+            rc = RaceControl.VSC
+
         state = RaceState(
-            meta=Meta(
-                seed=0, 
-                tick=data.tick, 
-                timestamp=0, 
-                laps_total=data.total_laps
-            ),
+            meta=Meta(seed=0, tick=data.tick, timestamp=0, laps_total=data.total_laps),
             track=mock_track,
             cars=cars,
-            safety_car_active=data.safety_car_active,
-            vsc_active=data.vsc_active,
+            race_control=rc,
             drs_enabled=data.drs_enabled
         )
 
@@ -114,3 +135,22 @@ def get_predictions(data: FrontendState):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/retrain")
+async def retrain_model(background_tasks: BackgroundTasks):
+    """
+    Trigger model retraining in the background.
+    """
+    from ..ml.train_model import train_models
+    
+    def _train_task():
+        print("[ML] Starting background training...")
+        try:
+            train_models()
+            print("[ML] Training completed successfully.")
+        except Exception as e:
+            print(f"[ML] Training failed: {e}")
+
+    background_tasks.add_task(_train_task)
+    return {"message": "Model retraining started in background"}

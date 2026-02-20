@@ -17,6 +17,12 @@ def run_simulation(seed: int, laps: int = 50):
     # Run the race
     while state.meta.tick < (state.meta.laps_total * 10000): # Safety limit
         controls = {}
+        
+        if state.meta.tick % 1000 == 0:
+            leader = state.cars[0] if state.cars else None
+            lap = leader.timing.lap if leader else 0
+            print(f"[DEBUG] Tick {state.meta.tick} - Leader Lap {lap}")
+            
         if state.meta.tick % 100 == 0:
             for car in state.cars:
                 if random.random() < 0.05:
