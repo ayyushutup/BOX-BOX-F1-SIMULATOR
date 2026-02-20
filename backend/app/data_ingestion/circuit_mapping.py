@@ -15,11 +15,18 @@ _CIRCUIT_NAME_MAP = {
     "Monza":        "monza",
     "Spa":          "spa",          # Spa-Francorchamps
     "Silverstone":  "silverstone",
+    "Suzuka":       "suzuka",
+    "São Paulo":    "interlagos",
+    "Austin":       "austin",
     # Common alternate names / lowercase variants
     "monaco":       "monaco",
     "monza":        "monza",
     "spa":          "spa",
     "silverstone":  "silverstone",
+    "suzuka":       "suzuka",
+    "interlagos":   "interlagos",
+    "são paulo":    "interlagos",
+    "austin":       "austin",
     "Spa-Francorchamps": "spa",
 }
 

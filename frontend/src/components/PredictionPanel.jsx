@@ -111,52 +111,66 @@ const PredictionPanel = ({ predictions, raceState }) => {
                                     const isTopDriver = index === 0
 
                                     return (
-                                        <div key={driver} style={{
-                                            display: 'flex', alignItems: 'center', gap: '8px',
-                                            fontFamily: 'var(--font-mono)',
-                                            padding: isTopDriver ? '6px 8px' : '3px 6px',
-                                            borderRadius: '6px',
-                                            background: isTopDriver ? 'rgba(255,255,255,0.04)' : 'transparent',
-                                            borderLeft: isTopDriver ? `3px solid ${teamColor}` : '3px solid transparent',
-                                            transition: 'background 0.3s',
-                                            ...(showDelta ? { animation: 'highlight-shift 1.5s ease-out' } : {}),
-                                        }}>
-                                            <span style={{
-                                                fontWeight: 700, width: '32px',
-                                                fontSize: isTopDriver ? '0.95rem' : '0.78rem',
-                                                color: isTopDriver ? 'white' : 'var(--text-primary)',
-                                            }}>{driver}</span>
-
+                                        <div key={driver} style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '2px' }}>
                                             <div style={{
-                                                width: '6px', height: '6px', borderRadius: '50%',
-                                                background: teamColor, boxShadow: `0 0 6px ${teamColor}40`,
-                                                flexShrink: 0,
-                                            }} />
-
-                                            <div style={{ flex: 1, height: isTopDriver ? '10px' : '7px', background: '#1a1a1a', borderRadius: '3px', overflow: 'hidden' }}>
-                                                <div style={{
-                                                    height: '100%', width: `${Math.min(prob * 100, 100)}%`,
-                                                    background: `linear-gradient(90deg, ${teamColor}88, ${teamColor})`,
-                                                    borderRadius: '3px', transition: 'width 0.6s ease-out',
-                                                    boxShadow: isTopDriver ? `0 0 8px ${teamColor}40` : 'none',
-                                                }} />
-                                            </div>
-
-                                            <span style={{
-                                                fontSize: isTopDriver ? '0.85rem' : '0.72rem',
-                                                width: '42px', textAlign: 'right',
-                                                color: isTopDriver ? 'white' : '#ccc',
-                                                fontWeight: isTopDriver ? 700 : 400,
-                                            }}>{(prob * 100).toFixed(1)}%</span>
-
-                                            {showDelta && (
+                                                display: 'flex', alignItems: 'center', gap: '8px',
+                                                fontFamily: 'var(--font-mono)',
+                                                padding: isTopDriver ? '6px 8px' : '3px 6px',
+                                                borderRadius: '6px',
+                                                background: isTopDriver ? 'rgba(255,255,255,0.04)' : 'transparent',
+                                                borderLeft: isTopDriver ? `3px solid ${teamColor}` : '3px solid transparent',
+                                                transition: 'background 0.3s',
+                                                ...(showDelta ? { animation: 'highlight-shift 1.5s ease-out' } : {}),
+                                            }}>
                                                 <span style={{
-                                                    fontSize: '0.55rem', width: '32px', textAlign: 'right', fontWeight: 700,
-                                                    color: delta > 0 ? '#00dc64' : '#ff4444',
-                                                    animation: 'fade-in 0.3s ease',
-                                                }}>
-                                                    {delta > 0 ? '▲' : '▼'}{absDelta.toFixed(1)}
-                                                </span>
+                                                    fontWeight: 700, width: '32px',
+                                                    fontSize: isTopDriver ? '0.95rem' : '0.78rem',
+                                                    color: isTopDriver ? 'white' : 'var(--text-primary)',
+                                                }}>{driver}</span>
+
+                                                <div style={{
+                                                    width: '6px', height: '6px', borderRadius: '50%',
+                                                    background: teamColor, boxShadow: `0 0 6px ${teamColor}40`,
+                                                    flexShrink: 0,
+                                                }} />
+
+                                                <div style={{ flex: 1, height: isTopDriver ? '10px' : '7px', background: '#1a1a1a', borderRadius: '3px', overflow: 'hidden' }}>
+                                                    <div style={{
+                                                        height: '100%', width: `${Math.min(prob * 100, 100)}%`,
+                                                        background: `linear-gradient(90deg, ${teamColor}88, ${teamColor})`,
+                                                        borderRadius: '3px', transition: 'width 0.6s ease-out',
+                                                        boxShadow: isTopDriver ? `0 0 8px ${teamColor}40` : 'none',
+                                                    }} />
+                                                </div>
+
+                                                <span style={{
+                                                    fontSize: isTopDriver ? '0.85rem' : '0.72rem',
+                                                    width: '42px', textAlign: 'right',
+                                                    color: isTopDriver ? 'white' : '#ccc',
+                                                    fontWeight: isTopDriver ? 700 : 400,
+                                                }}>{(prob * 100).toFixed(1)}%</span>
+
+                                                {showDelta && (
+                                                    <span style={{
+                                                        fontSize: '0.55rem', width: '32px', textAlign: 'right', fontWeight: 700,
+                                                        color: delta > 0 ? '#00dc64' : '#ff4444',
+                                                        animation: 'fade-in 0.3s ease',
+                                                    }}>
+                                                        {delta > 0 ? '▲' : '▼'}{absDelta.toFixed(1)}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {/* AI Reason Tags (Mocked for top 2) */}
+                                            {isTopDriver && (
+                                                <div style={{ padding: '2px 0 2px 50px', display: 'flex', gap: '6px', fontSize: '0.55rem', fontFamily: 'var(--font-mono)' }}>
+                                                    <span style={{ background: 'rgba(0, 220, 100, 0.1)', color: '#00dc64', padding: '2px 6px', borderRadius: '4px' }}>Track Pos +3.2%</span>
+                                                    <span style={{ background: 'rgba(0, 220, 100, 0.1)', color: '#00dc64', padding: '2px 6px', borderRadius: '4px' }}>Tyre Life +1.8%</span>
+                                                </div>
+                                            )}
+                                            {index === 1 && (
+                                                <div style={{ padding: '2px 0 2px 50px', display: 'flex', gap: '6px', fontSize: '0.55rem', fontFamily: 'var(--font-mono)' }}>
+                                                    <span style={{ background: 'rgba(255, 68, 68, 0.1)', color: '#ff4444', padding: '2px 6px', borderRadius: '4px' }}>ERS Deficit -0.9%</span>
+                                                </div>
                                             )}
                                         </div>
                                     )
@@ -214,6 +228,22 @@ const PredictionPanel = ({ predictions, raceState }) => {
                         {/* Confidence Curve */}
                         <div style={{ marginTop: '4px' }}>
                             <ConfidenceCurve isPlaying={raceState?.is_finished === false} />
+                        </div>
+
+                        {/* Simulation Branch Button */}
+                        <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed #444', textAlign: 'center' }}>
+                            <button style={{
+                                background: 'linear-gradient(90deg, #6a11cb 0%, #2575fc 100%)',
+                                color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px',
+                                fontSize: '0.7rem', fontWeight: 700, letterSpacing: '1px', cursor: 'pointer',
+                                width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px',
+                                boxShadow: '0 4px 15px rgba(37, 117, 252, 0.3)', transition: 'transform 0.2s, box-shadow 0.2s'
+                            }}
+                                onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(37, 117, 252, 0.4)' }}
+                                onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(37, 117, 252, 0.3)' }}
+                            >
+                                <span style={{ fontSize: '1rem' }}>🔀</span> SIMULATE ALT STRATEGY
+                            </button>
                         </div>
                     </>
                 )}

@@ -34,7 +34,10 @@ function TrackDashboard({ tracks, onSelectTrack }) {
                                 {track.id === 'monaco' ? '🇲🇨' :
                                     track.id === 'monza' ? '🇮🇹' :
                                         track.id === 'silverstone' ? '🇬🇧' :
-                                            track.id === 'spa' ? '🇧🇪' : '🏁'}
+                                            track.id === 'spa' ? '🇧🇪' :
+                                                track.id === 'suzuka' ? '🇯🇵' :
+                                                    track.id === 'interlagos' ? '🇧🇷' :
+                                                        track.id === 'austin' ? '🇺🇸' : '🏁'}
                             </span>
                             <span className="track-name">{track.name.split(' (')[0].toUpperCase()}</span>
                         </div>

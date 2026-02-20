@@ -202,8 +202,24 @@ def calculate_speed(
     # Dirty Air Penalty (applied after grip)
     speed *= (1.0 - dirty_air_penalty)
     
-    # Tire wear penalty (more wear = slower)
-    tire_penalty = tire_wear * TIRE_WEAR_PENALTY
+    # Tire wear penalty
+    # 1. Base linear penalty (up to 75% wear)
+    # 2. The "Cliff" (severe exponential penalty > 75% wear)
+    if tire_wear <= 0.75:
+        tire_penalty = tire_wear * TIRE_WEAR_PENALTY
+    else:
+        # Pushes penalty drastically higher. At 100% wear, car loses ~100 km/h instead of 50 km/h
+        base_penalty = 0.75 * TIRE_WEAR_PENALTY
+        cliff_wear = tire_wear - 0.75
+        cliff_penalty = (cliff_wear / 0.25) ** 2 * (TIRE_WEAR_PENALTY * 1.5)
+        tire_penalty = base_penalty + cliff_penalty
+
+    # Tire Warm-up Penalty (Cold tires)
+    # Fresh Hard tires are very slow for the first 5% of their life
+    if tire_compound == "HARD" and tire_wear < 0.05:
+        warmup_factor = 1.0 - (tire_wear / 0.05)  # 1.0 at 0% wear, 0.0 at 5% wear
+        tire_penalty += 15.0 * warmup_factor  # Up to 15km/h slower out of the pits
+        
     speed -= tire_penalty
     
     # Fuel weight penalty (more fuel = slower)
@@ -374,4 +390,74 @@ def calculate_blue_flag_penalty() -> float:
     Reduces speed by 10% to let faster car pass.
     """
     return 0.10  # 10% speed reduction
+
+# ---------
+# 2D Kinematics (Phase 2 RL)
+# ---------
+
+def update_vehicle_dynamics(
+    x: float, y: float, heading: float, speed_kmh: float, 
+    throttle: float, brake: float, steering: float,
+    grip_factor: float = 1.0, dt_sec: float = 0.1
+) -> tuple[float, float, float, float]:
+    """
+    Update 2D Kinematic Bicycle Model for Reinforcement Learning.
+    
+    Args:
+        x, y: Current coordinates in meters
+        heading: Car angle in radians
+        speed_kmh: Current longitudinal speed in km/h
+        throttle: 0.0 to 1.0
+        brake: 0.0 to 1.0
+        steering: -1.0 (left) to 1.0 (right)
+        grip_factor: Multiplier for maximum acceleration/braking/turning
+        dt_sec: Time step in seconds
+        
+    Returns:
+        (new_x, new_y, new_heading, new_speed_kmh)
+    """
+    import math
+    
+    speed_ms = speed_kmh / 3.6
+    
+    # F1 style capabilities
+    MAX_ACCEL = 12.0 * grip_factor  # m/s^2 
+    MAX_DECEL = 40.0 * grip_factor  # m/s^2 (F1 cars can hit 4-5G under braking)
+    WHEELBASE = 3.6  # meters
+    MAX_STEERING_ANGLE = 0.5  # radians (approx 28 degrees)
+    DRAG_COEFF = 0.005 # Aero drag
+    
+    # 1. Update Speed
+    accel = throttle * MAX_ACCEL
+    decel = brake * MAX_DECEL
+    drag = speed_ms * speed_ms * DRAG_COEFF
+    
+    net_accel = accel - decel - drag
+    new_speed_ms = speed_ms + (net_accel * dt_sec)
+    new_speed_ms = max(0.0, new_speed_ms) # No reverse for now
+    
+    # 2. Update Heading (Kinematic Bicycle)
+    actual_steering = steering * MAX_STEERING_ANGLE
+    if new_speed_ms > 0.1:
+        # turn rate = (speed / wheelbase) * tan(steering_angle)
+        turn_rate = (new_speed_ms / WHEELBASE) * math.tan(actual_steering)
+        
+        # Simplistic grip limit: lateral accel = v^2 / r = v * turn_rate
+        # Limit turn rate based on grip (max lat Gs ~ 4G = 39.2 m/s^2)
+        max_lat_accel = 39.2 * grip_factor
+        max_turn_rate = max_lat_accel / new_speed_ms 
+        
+        turn_rate = max(-max_turn_rate, min(max_turn_rate, turn_rate))
+        new_heading = heading + (turn_rate * dt_sec)
+        
+        # Normalize heading to 0-2PI
+        new_heading = new_heading % (2 * math.pi)
+    else:
+        new_heading = heading
+        
+    # 3. Update Position
+    new_x = x + (new_speed_ms * math.cos(new_heading) * dt_sec)
+    new_y = y + (new_speed_ms * math.sin(new_heading) * dt_sec)
+    
+    return new_x, new_y, new_heading, new_speed_ms * 3.6
 

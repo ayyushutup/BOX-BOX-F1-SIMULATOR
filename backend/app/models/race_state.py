@@ -54,6 +54,13 @@ class Sector(BaseModel):
     sector_type: SectorType
     length: int = Field(gt=0, description="length in meters")    
 
+class TrackBoundary(BaseModel):
+    """2D spatial limits of the track"""
+    inner_x: list[float] = Field(default_factory=list)
+    inner_y: list[float] = Field(default_factory=list)
+    outer_x: list[float] = Field(default_factory=list)
+    outer_y: list[float] = Field(default_factory=list)
+
 class EventType(str, Enum):
     """Types of events that can occur during a race"""
     SAFETY_CAR = "SAFETY_CAR"
@@ -89,6 +96,14 @@ class CarTelemetry(BaseModel):
     lap_progress: float = Field(ge=0.0, le=1.0)
     tire_state: TireState
     dirty_air_effect: float = Field(default=0.0)
+    
+    # 2D Spatial & RL Fields
+    x: float = Field(default=0.0, description="X coordinate in meters")
+    y: float = Field(default=0.0, description="Y coordinate in meters")
+    heading: float = Field(default=0.0, description="Heading angle in radians")
+    steering: float = Field(default=0.0, ge=-1.0, le=1.0, description="Steering input")
+    throttle: float = Field(default=0.0, ge=0.0, le=1.0, description="Throttle input (0-1)")
+    brake: float = Field(default=0.0, ge=0.0, le=1.0, description="Brake input (0-1)")
 
 class CarSystems(BaseModel):
     drs_active: bool = Field(default=False)
@@ -145,6 +160,9 @@ class Track(BaseModel):
     country_code: str = Field(default="XX", description="ISO 3166-1 alpha-2 country code")
     avg_lap_time: str = Field(default="0:00.000", description="Average lap time for display")
     pit_lap_window: str = Field(default="0-0", description="Expected pit stop window")
+    
+    # RL Geometry
+    boundary: TrackBoundary | None = Field(default=None, description="2D track layout for RL")
 
 class RaceControl(str, Enum):
     """Mutually exclusive race control states"""

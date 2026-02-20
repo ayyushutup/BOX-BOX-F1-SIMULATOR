@@ -1,6 +1,6 @@
 """
-FastAPI server for BOX-BOX F1 Simulation
-Provides REST API and WebSocket for real-time race updates
+FastAPI server for BOX-BOX F1 Scenario Simulator
+Provides REST API and WebSocket for real-time scenario simulation
 """
 
 import asyncio
@@ -9,24 +9,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 
-from .simulation.data import create_race_state, TRACKS
+from .simulation.data import TRACKS
 from .simulation.engine import tick
 from .simulation.rng import SeededRNG
-from .models.race_state import RaceControl
+from .models.race_state import RaceControl, CarStatus
+from .scenarios.catalog import SCENARIO_CATALOG
+from .scenarios.runner import run_scenario, build_initial_state
+from .scenarios.types import Scenario
 from .api import ml
 from .ml.predictor import RacePredictor
 from contextlib import asynccontextmanager
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Background task to run the race simulation
-    asyncio.create_task(run_simulation_loop())
+    # Background task for live scenario playback
+    asyncio.create_task(run_scenario_loop())
     yield
 
 app = FastAPI(
-    title="BOX-BOX F1 Simulation API",
-    description="Real-time F1 race simulation engine",
-    version="1.0.0",
+    title="BOX-BOX F1 Scenario Simulator API",
+    description="Scenario-based F1 simulation engine",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -43,48 +47,24 @@ app.add_middleware(
 app.include_router(ml.router, prefix="/api/ml", tags=["Machine Learning"])
 from .api import reality
 app.include_router(reality.router, prefix="/api/reality", tags=["Reality Injection"])
-from .api import reality
-
-
-# =====================
-# REQUEST/RESPONSE MODELS
-# =====================
-
-class RaceConfig(BaseModel):
-    track_id: str = "monaco"
-    seed: int = 42
-    laps: int = 10
-
-
-class RaceStateResponse(BaseModel):
-    """Simplified race state for frontend consumption"""
-    lap: int
-    total_laps: int
-    time_ms: int
-    tick: int
-    race_control: str
-    drs_enabled: bool
-    is_finished: bool
-    cars: list
-    events: list
-    track: dict
 
 
 # =====================
 # GLOBAL SIMULATION STATE
 # =====================
 
-
 simulation_state = {
     "race_state": None,
     "rng": None,
     "is_running": False,
-    "config": None,
+    "scenario": None,          # Active Scenario object
+    "scenario_id": None,       # Active scenario ID
     "speed": 1,
-    "driver_commands": {},  # {"VER": "BOX_THIS_LAP", "HAM": "PUSH"}
-    "predictions": None,           # Latest ML predictions dict
-    "prediction_history": [],      # List of {tick, lap, confidence, win_prob} snapshots
-    "last_prediction_tick": 0,     # Tick when we last ran ML
+    "driver_commands": {},
+    "predictions": None,
+    "prediction_history": [],
+    "last_prediction_tick": 0,
+    "finish_lap": None,        # Lap where scenario ends
 }
 
 # Singleton predictor - loads models once at startup
@@ -92,36 +72,46 @@ ml_predictor = RacePredictor()
 
 
 # =====================
-# BACKGROUND SIMULATION LOOP
+# BACKGROUND SCENARIO LOOP
 # =====================
 
-async def run_simulation_loop():
-    """Background task to run the race simulation"""
-    print("Starting simulation loop...")
+async def run_scenario_loop():
+    """Background task to run the scenario simulation in real-time"""
+    print("Starting scenario simulation loop...")
     while True:
         try:
             if simulation_state["is_running"] and simulation_state["race_state"]:
                 state = simulation_state["race_state"]
                 rng = simulation_state["rng"]
                 speed = simulation_state.get("speed", 1)
-                
-                # Check if race finished
-                leader = min(state.cars, key=lambda c: c.timing.position)
-                if leader.timing.lap >= state.meta.laps_total:
+                finish_lap = simulation_state.get("finish_lap")
+
+                # Check if scenario finished
+                racing_cars = [c for c in state.cars if c.status == CarStatus.RACING]
+                if not racing_cars:
                     simulation_state["is_running"] = False
                     await manager.broadcast({
                         "type": "finished",
                         "data": format_race_state(state)
                     })
                     continue
-                
+
+                leader = max(racing_cars, key=lambda c: (c.timing.lap, c.telemetry.lap_progress))
+                if finish_lap and leader.timing.lap >= finish_lap:
+                    simulation_state["is_running"] = False
+                    await manager.broadcast({
+                        "type": "finished",
+                        "data": format_race_state(state)
+                    })
+                    continue
+
                 # Advance simulation by 'speed' ticks
                 for _ in range(speed):
                     state = tick(state, rng, driver_commands=simulation_state["driver_commands"])
-                
+
                 simulation_state["race_state"] = state
-                
-                # Run ML predictions every ~50 ticks (5s sim time)
+
+                # Run ML predictions every ~50 ticks
                 predictions_payload = None
                 current_tick = state.meta.tick
                 if current_tick - simulation_state["last_prediction_tick"] >= 50:
@@ -131,7 +121,6 @@ async def run_simulation_loop():
                             simulation_state["predictions"] = preds
                             simulation_state["last_prediction_tick"] = current_tick
                             predictions_payload = preds
-                            # Store snapshot for confidence curve
                             simulation_state["prediction_history"].append({
                                 "tick": current_tick,
                                 "lap": preds.get("lap", 0),
@@ -140,22 +129,22 @@ async def run_simulation_loop():
                             })
                     except Exception as e:
                         print(f"ML prediction error (non-fatal): {e}")
-                
-                # Broadcast update (with predictions if available)
+
+                # Broadcast update
                 broadcast_data = {
                     "type": "update",
                     "data": format_race_state(state)
                 }
                 if predictions_payload:
                     broadcast_data["predictions"] = predictions_payload
-                
+
                 await manager.broadcast(broadcast_data)
-            
-            # Control update rate (100ms = 10 updates/sec)
+
+            # 100ms = 10 updates/sec
             await asyncio.sleep(0.1)
-            
+
         except Exception as e:
-            print(f"Error in simulation loop: {e}")
+            print(f"Error in scenario loop: {e}")
             await asyncio.sleep(1)
 
 
@@ -166,11 +155,12 @@ async def run_simulation_loop():
 def format_race_state(state) -> dict:
     """Convert RaceState to frontend-friendly format"""
     leader = min(state.cars, key=lambda c: c.timing.position)
-    is_finished = leader.timing.lap >= state.meta.laps_total
-    
+    finish_lap = simulation_state.get("finish_lap") or state.meta.laps_total
+    is_finished = leader.timing.lap >= finish_lap
+
     sc_active = state.race_control == RaceControl.SAFETY_CAR
     vsc_active = state.race_control == RaceControl.VSC
-    
+
     cars = []
     for car in sorted(state.cars, key=lambda c: c.timing.position):
         cars.append({
@@ -195,11 +185,11 @@ def format_race_state(state) -> dict:
             "interval": car.timing.interval,
             "driving_mode": car.strategy.driving_mode.value,
             "active_command": car.strategy.active_command,
-            "in_pit_lane": car.in_pit_lane
+            "in_pit_lane": car.in_pit_lane,
+            "fuel": round(car.telemetry.fuel, 2),
         })
-    
+
     events = []
-    # Get last 10 events
     for event in state.events[-10:]:
         events.append({
             "tick": event.tick,
@@ -208,10 +198,22 @@ def format_race_state(state) -> dict:
             "driver": event.driver,
             "description": event.description
         })
-    
+
+    # Include scenario info if available
+    scenario = simulation_state.get("scenario")
+    scenario_info = None
+    if scenario:
+        scenario_info = {
+            "id": scenario.id,
+            "name": scenario.name,
+            "type": scenario.type.value,
+            "starting_lap": scenario.starting_lap,
+            "total_laps": scenario.total_laps,
+        }
+
     return {
         "lap": leader.timing.lap,
-        "total_laps": state.meta.laps_total,
+        "total_laps": finish_lap,
         "time_ms": state.meta.timestamp,
         "tick": state.meta.tick,
         "safety_car_active": sc_active,
@@ -227,7 +229,8 @@ def format_race_state(state) -> dict:
             "length": state.track.length,
             "svg_path": state.track.svg_path,
             "view_box": state.track.view_box
-        }
+        },
+        "scenario": scenario_info,
     }
 
 
@@ -237,7 +240,7 @@ def format_race_state(state) -> dict:
 
 @app.get("/")
 def root():
-    return {"message": "BOX-BOX F1 Simulation API", "status": "running"}
+    return {"message": "BOX-BOX F1 Scenario Simulator API", "status": "running", "version": "2.0.0"}
 
 
 @app.get("/api/tracks")
@@ -269,77 +272,66 @@ def get_tracks():
     return {"tracks": tracks}
 
 
-@app.post("/api/race/init")
-def init_race(config: RaceConfig):
-    """Initialize a new race simulation"""
-    state = create_race_state(
-        track_id=config.track_id,
-        seed=config.seed,
-        laps=config.laps
-    )
-    rng = SeededRNG(config.seed)
-    
-    simulation_state["race_state"] = state
-    simulation_state["rng"] = rng
-    simulation_state["config"] = config
-    simulation_state["is_running"] = False
-    
-    # Reset ML state on new race
-    simulation_state["predictions"] = None
-    simulation_state["prediction_history"] = []
-    simulation_state["last_prediction_tick"] = 0
-    
+# =====================
+# SCENARIO API ENDPOINTS
+# =====================
+
+@app.get("/api/scenarios")
+def list_scenarios():
+    """Get all available scenarios from the catalog"""
+    scenarios = []
+    for scenario in SCENARIO_CATALOG.values():
+        scenarios.append({
+            "id": scenario.id,
+            "name": scenario.name,
+            "description": scenario.description,
+            "type": scenario.type.value,
+            "difficulty": scenario.difficulty.value,
+            "track_id": scenario.track_id,
+            "starting_lap": scenario.starting_lap,
+            "total_laps": scenario.total_laps,
+            "car_count": len(scenario.cars),
+            "tags": scenario.tags,
+            "icon": scenario.icon,
+            "seed": scenario.seed,
+        })
+    return {"scenarios": scenarios}
+
+
+@app.get("/api/scenarios/{scenario_id}")
+def get_scenario(scenario_id: str):
+    """Get full details of a specific scenario"""
+    scenario = SCENARIO_CATALOG.get(scenario_id)
+    if not scenario:
+        return {"error": f"Scenario '{scenario_id}' not found"}
+
     return {
-        "status": "initialized",
-        "track": TRACKS[config.track_id].name,
-        "laps": config.laps,
-        "seed": config.seed,
-        "race_state": format_race_state(state)
+        "scenario": scenario.model_dump(),
+        "track": TRACKS.get(scenario.track_id, TRACKS["monaco"]).model_dump()
     }
 
 
-@app.get("/api/race/state")
-def get_race_state():
-    """Get current race state"""
+@app.post("/api/scenarios/{scenario_id}/run")
+def run_scenario_instant(scenario_id: str):
+    """Run a scenario to completion instantly and return results"""
+    scenario = SCENARIO_CATALOG.get(scenario_id)
+    if not scenario:
+        return {"error": f"Scenario '{scenario_id}' not found"}
+
+    result, snapshots = run_scenario(scenario)
+    return {
+        "result": result.model_dump(),
+        "snapshots": snapshots,
+    }
+
+
+@app.get("/api/scenario/state")
+def get_scenario_state():
+    """Get current live scenario state"""
     if simulation_state["race_state"] is None:
-        return {"error": "No race initialized. Call POST /api/race/init first."}
-    
+        return {"error": "No scenario running. Use WebSocket to start one."}
+
     return format_race_state(simulation_state["race_state"])
-
-
-@app.post("/api/race/tick")
-def advance_tick():
-    """Advance simulation by one tick"""
-    if simulation_state["race_state"] is None:
-        return {"error": "No race initialized"}
-    
-    state = simulation_state["race_state"]
-    rng = simulation_state["rng"]
-    
-    # Advance one tick
-    new_state = tick(state, rng)
-    simulation_state["race_state"] = new_state
-    
-    return format_race_state(new_state)
-
-
-@app.post("/api/race/step")
-def advance_step(ticks: int = 10):
-    """Advance simulation by multiple ticks"""
-    if simulation_state["race_state"] is None:
-        return {"error": "No race initialized"}
-    
-    state = simulation_state["race_state"]
-    rng = simulation_state["rng"]
-    
-    for _ in range(ticks):
-        leader = min(state.cars, key=lambda c: c.timing.position)
-        if leader.timing.lap >= state.meta.laps_total:
-            break
-        state = tick(state, rng)
-    
-    simulation_state["race_state"] = state
-    return format_race_state(state)
 
 
 # =====================
@@ -348,11 +340,11 @@ def advance_step(ticks: int = 10):
 
 @app.get("/api/ml/confidence-curve")
 def get_confidence_curve():
-    """Get prediction confidence curve over time for the current race"""
+    """Get prediction confidence curve over time"""
     history = simulation_state.get("prediction_history", [])
     if not history:
-        return {"error": "No prediction history available. Start a race first."}
-    
+        return {"error": "No prediction history available. Start a scenario first."}
+
     return {
         "snapshots": history,
         "total_snapshots": len(history)
@@ -367,14 +359,14 @@ class ConnectionManager:
     """Manage WebSocket connections"""
     def __init__(self):
         self.active_connections: list[WebSocket] = []
-    
+
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
-    
+
     def disconnect(self, websocket: WebSocket):
         self.active_connections.remove(websocket)
-    
+
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
             try:
@@ -387,87 +379,100 @@ manager = ConnectionManager()
 
 
 @app.websocket("/ws/race")
-async def websocket_race(websocket: WebSocket):
-    """WebSocket endpoint for live race updates"""
+async def websocket_scenario(websocket: WebSocket):
+    """WebSocket endpoint for live scenario simulation"""
     await manager.connect(websocket)
-    
+
     try:
         while True:
-            # Receive commands from client
             data = await websocket.receive_json()
             command = data.get("command")
-            
-            if command == "init":
-                # Initialize race
-                config = RaceConfig(
-                    track_id=data.get("track_id", "monaco"),
-                    seed=data.get("seed", 42),
-                    laps=data.get("laps", 10)
-                )
-                state = create_race_state(
-                    track_id=config.track_id,
-                    seed=config.seed,
-                    laps=config.laps
-                )
-                rng = SeededRNG(config.seed)
+
+            if command == "init_scenario":
+                # Initialize a scenario for live playback
+                scenario_id = data.get("scenario_id")
+                scenario = SCENARIO_CATALOG.get(scenario_id)
+                if not scenario:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Scenario '{scenario_id}' not found"
+                    })
+                    continue
+
+                state = build_initial_state(scenario)
+                rng = SeededRNG(scenario.seed)
+
                 simulation_state["race_state"] = state
                 simulation_state["rng"] = rng
-                simulation_state["config"] = config
+                simulation_state["scenario"] = scenario
+                simulation_state["scenario_id"] = scenario_id
                 simulation_state["is_running"] = False
                 simulation_state["speed"] = 1
+                simulation_state["driver_commands"] = {}
                 simulation_state["predictions"] = None
                 simulation_state["prediction_history"] = []
                 simulation_state["last_prediction_tick"] = 0
-                
+                simulation_state["finish_lap"] = scenario.starting_lap + scenario.total_laps
+
                 await websocket.send_json({
                     "type": "init",
-                    "data": format_race_state(state)
+                    "data": format_race_state(state),
+                    "scenario": {
+                        "id": scenario.id,
+                        "name": scenario.name,
+                        "description": scenario.description,
+                        "type": scenario.type.value,
+                        "difficulty": scenario.difficulty.value,
+                        "total_laps": scenario.total_laps,
+                        "starting_lap": scenario.starting_lap,
+                        "tags": scenario.tags,
+                        "icon": scenario.icon,
+                    }
                 })
-            
+
             elif command == "start":
-                # Enable simulation loop
                 simulation_state["is_running"] = True
                 if "speed" in data:
                     simulation_state["speed"] = data.get("speed", 1)
-            
+
             elif command == "pause":
                 simulation_state["is_running"] = False
                 await websocket.send_json({"type": "paused"})
-            
+
             elif command == "step":
                 if simulation_state["race_state"]:
                     state = simulation_state["race_state"]
                     rng = simulation_state["rng"]
                     count = data.get("count", 1)
-                    
+
                     for _ in range(count):
-                         state = tick(state, rng)
-                    
+                        state = tick(state, rng)
+
                     simulation_state["race_state"] = state
                     await websocket.send_json({
                         "type": "update",
                         "data": format_race_state(state)
                     })
-            
+
             elif command == "get_state":
                 if simulation_state["race_state"]:
                     await websocket.send_json({
                         "type": "state",
                         "data": format_race_state(simulation_state["race_state"])
                     })
-            
+
             elif command == "event":
                 event_type = data.get("type")
                 if simulation_state["race_state"]:
                     current = simulation_state["race_state"]
                     updates = {}
-                    
+
                     if event_type == "SC":
                         if current.race_control == RaceControl.SAFETY_CAR:
                             updates["race_control"] = RaceControl.GREEN
                         else:
                             updates["race_control"] = RaceControl.SAFETY_CAR
-                            
+
                     elif event_type == "VSC":
                         if current.race_control == RaceControl.VSC:
                             updates["race_control"] = RaceControl.GREEN
@@ -479,7 +484,7 @@ async def websocket_race(websocket: WebSocket):
                         current_track = current.track
                         current_weather = current_track.weather
                         new_weather_vals = {}
-                        
+
                         if weather_type == "RAIN":
                             new_weather_vals = {
                                 "rain_probability": 0.8,
@@ -487,73 +492,39 @@ async def websocket_race(websocket: WebSocket):
                                 "wind_speed": 15.0
                             }
                         elif weather_type == "DRY":
-                             new_weather_vals = {
+                            new_weather_vals = {
                                 "rain_probability": 0.0,
                                 "temperature": 28.0,
                                 "wind_speed": 5.0
-                             }
-                             
-                        try:
-                            new_weather = current_weather.model_copy(update=new_weather_vals)
-                        except AttributeError:
-                             new_weather = current_weather.copy(update=new_weather_vals)
-                             
-                        try:
-                            new_track = current_track.model_copy(update={"weather": new_weather})
-                        except AttributeError:
-                            new_track = current_track.copy(update={"weather": new_weather})
-                            
+                            }
+
+                        new_weather = current_weather.model_copy(update=new_weather_vals)
+                        new_track = current_track.model_copy(update={"weather": new_weather})
                         updates["track"] = new_track
-                            
+
                     # Apply updates
-                    try:
-                        new_state = current.model_copy(update=updates)
-                    except AttributeError:
-                        new_state = current.copy(update=updates)
-                        
+                    new_state = current.model_copy(update=updates)
                     simulation_state["race_state"] = new_state
-                    
-                    # Broadcast immediately
+
                     await manager.broadcast({
                         "type": "update",
                         "data": format_race_state(new_state)
                     })
-            
-            elif command == "skip_to_lap":
-                target_lap = data.get("lap", 1)
-                if simulation_state["race_state"]:
-                    state = simulation_state["race_state"]
-                    rng = simulation_state["rng"]
-                    max_ticks = 50000
-                    ticks_done = 0
-                    
-                    while ticks_done < max_ticks:
-                        leader = min(state.cars, key=lambda c: c.timing.position)
-                        if leader.timing.lap >= target_lap or leader.timing.lap >= state.meta.laps_total:
-                            break
-                        state = tick(state, rng, driver_commands=simulation_state["driver_commands"])
-                        ticks_done += 1
-                    
-                    simulation_state["race_state"] = state
-                    await websocket.send_json({
-                        "type": "update",
-                        "data": format_race_state(state)
-                    })
-            
+
             elif command == "driver_command":
                 driver = data.get("driver")
                 cmd = data.get("cmd")
-                
+
                 if driver and cmd:
                     simulation_state["driver_commands"][driver] = cmd
                     print(f"[TEAM RADIO] Command queued: {driver} -> {cmd}")
-                    
+
                     await websocket.send_json({
                         "type": "command_ack",
                         "driver": driver,
                         "cmd": cmd
                     })
-    
+
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
