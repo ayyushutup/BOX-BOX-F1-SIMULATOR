@@ -7,6 +7,7 @@ from ..models.race_state import (
     DrivingMode, RaceControl,
     CarIdentity, CarTelemetry, CarSystems, CarStrategy, CarTiming
 )
+from ..ml.pit_predictor import PitStrategyPredictor
 from .rng import SeededRNG
 from .physics import (
     calculate_speed, calculate_tire_wear, calculate_fuel_consumption, BASE_SPEED,
@@ -177,8 +178,8 @@ def tick(state: RaceState, rng: SeededRNG, driver_commands: dict = None) -> Race
         
         # Check if car should pit (at start/finish line)
         driver_cmd = driver_commands.get(car.identity.driver)
-        if car.telemetry.lap_progress < 0.05 and car.timing.lap > 0 and should_pit(car, rng, driver_cmd) and not car.in_pit_lane:
-            updated_car, pit_event = execute_pit_stop(car, rng, new_tick)
+        if car.telemetry.lap_progress < 0.05 and car.timing.lap > 0 and should_pit(car, state.cars, rng, sc_active, vsc_active, driver_cmd) and not car.in_pit_lane:
+            updated_car, pit_event = execute_pit_stop(car, rng, new_tick, sc_active, vsc_active)
             new_events.append(pit_event)
             # Clear BOX_THIS_LAP after pit entry
             if driver_cmd == "BOX_THIS_LAP" and car.identity.driver in driver_commands:
@@ -566,19 +567,43 @@ def update_car(
         pit_lane_progress=car.pit_lane_progress,
     )
 
-def should_pit(car: Car, rng: SeededRNG, driver_command: str = None) -> bool:
-    """Decide if car should pit based on tire wear or Team Principal command."""
+def should_pit(car: Car, all_cars: list[Car], rng: SeededRNG, sc_active: bool = False, vsc_active: bool = False, driver_command: str = None) -> bool:
+    """Decide if car should pit based on True ML AI model, track conditions, or Team Principal command."""
     if driver_command == "BOX_THIS_LAP":
         return True
     
-    if car.telemetry.tire_state.wear > 0.80:
+    wear = car.telemetry.tire_state.wear
+
+    # 1. Critical wear (Must pit) - Safety heuristic fallback
+    if wear > 0.85:
         return True
-    if car.telemetry.tire_state.wear > 0.50 and rng.random() < 0.10:
+
+    # 2. True AI Model Prediction
+    predictor = PitStrategyPredictor()
+    ml_decision = predictor.predict_should_pit(car, sc_active, vsc_active)
+    
+    if ml_decision:
         return True
+
+    # 3. Covering off rivals (The Undercut defense)
+    # The ML model right now doesn't explicitly have the tire wear of the car behind,
+    # so we keep this one specialized racing heuristic active to maintain competitive edge.
+    if wear > 0.40:
+        for rival in all_cars:
+            if rival.identity.driver == car.identity.driver or rival.status != CarStatus.RACING:
+                continue
+            
+            # Is rival close behind us?
+            interval = calculate_gap_to_car_ahead(rival, car, track_length=5000) # approximate
+            if interval < 3.0 and rival.telemetry.tire_state.wear < 0.02:
+                # Rival just pitted and is fast closing. Pit next lap to defend!
+                if rng.random() < 0.90:
+                    return True
+
     return False
 
-def execute_pit_stop(car: Car, rng: SeededRNG, tick: int) -> tuple[Car, Event]:
-    """Simulate pit stop: gives fresh tires, costs ~3 seconds of progress."""
+def execute_pit_stop(car: Car, rng: SeededRNG, tick: int, sc_active: bool = False, vsc_active: bool = False) -> tuple[Car, Event]:
+    """Simulate pit stop: gives fresh tires, costs progress (cheaper under SC/VSC)."""
     
     if car.telemetry.tire_state.compound == TireCompound.SOFT:
         new_compound = TireCompound.MEDIUM
@@ -587,7 +612,10 @@ def execute_pit_stop(car: Car, rng: SeededRNG, tick: int) -> tuple[Car, Event]:
     else:
         new_compound = TireCompound.MEDIUM
     
-    pit_time_penalty = rng.uniform(0.02, 0.03)
+    # Normal pit stop loses ~0.025 progress. Under SC, everyone goes slow, so relative loss is halved.
+    base_penalty = rng.uniform(0.022, 0.028)
+    pit_time_penalty = base_penalty * 0.5 if (sc_active or vsc_active) else base_penalty
+    
     new_progress = max(0, car.telemetry.lap_progress - pit_time_penalty)
     
     new_car = car.model_copy(update={

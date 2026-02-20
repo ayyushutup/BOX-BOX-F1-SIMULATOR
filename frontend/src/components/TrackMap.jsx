@@ -14,7 +14,7 @@ const TEAM_COLORS = {
     'Sauber': '#52E252',
 }
 
-function TrackMap({ cars, track, mode = 'SPECTATOR' }) {
+function TrackMap({ cars, track, raceControl, mode = 'SPECTATOR' }) {
     const defaultPath = "M 100,200 L 300,200 Q 350,200 350,150 L 350,100 Q 350,50 300,50 L 200,50 Q 150,50 150,100 L 150,150 Q 150,200 100,200 Z"
     const trackPath = track?.svg_path || defaultPath
 
@@ -91,7 +91,47 @@ function TrackMap({ cars, track, mode = 'SPECTATOR' }) {
                             <feMergeNode in="SourceGraphic" />
                         </feMerge>
                     </filter>
+                    <filter id="yellow-flag-glow">
+                        <feGaussianBlur stdDeviation="6" result="blur" />
+                        <feMerge>
+                            <feMergeNode in="blur" />
+                            <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                    </filter>
                 </defs>
+
+                {/* Yellow Flag Full Track Pulse */}
+                {['YELLOW', 'VSC', 'SAFETY_CAR'].includes(raceControl) && (
+                    <path
+                        d={trackPath}
+                        fill="none"
+                        stroke="rgba(255, 214, 0, 0.4)"
+                        strokeWidth="24"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        filter="url(#yellow-flag-glow)"
+                        className="yellow-flag-pulse"
+                    />
+                )}
+
+                {/* DRS Zones Highlighting */}
+                {pathLength > 0 && track?.drs_zones?.map((zone, i) => {
+                    const startLen = zone.start * pathLength
+                    const endLen = zone.end * pathLength
+                    const length = endLen > startLen ? endLen - startLen : (pathLength - startLen) + endLen
+                    const dashArray = `0 ${startLen} ${length} ${pathLength}`
+                    return (
+                        <path
+                            key={`drs-${i}`}
+                            d={trackPath}
+                            fill="none"
+                            stroke="rgba(0, 230, 118, 0.25)"
+                            strokeWidth="22"
+                            strokeLinecap="round"
+                            strokeDasharray={dashArray}
+                        />
+                    )
+                })}
 
                 {/* Track Base */}
                 <path
@@ -247,6 +287,16 @@ function TrackMap({ cars, track, mode = 'SPECTATOR' }) {
                     <span className="hud-value">{cars[0]?.sector + 1 || 1}</span>
                 </div>
             </div>
+
+            <style>{`
+                @keyframes yellowPulse {
+                    0%, 100% { opacity: 0.3; }
+                    50% { opacity: 0.8; }
+                }
+                .yellow-flag-pulse {
+                    animation: yellowPulse 2s ease-in-out infinite;
+                }
+            `}</style>
         </div>
     )
 }

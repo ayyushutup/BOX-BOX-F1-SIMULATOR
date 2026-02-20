@@ -42,12 +42,28 @@ const IncidentPredictor = ({ raceState }) => {
         return { scProb, rainProb, crashProb }
     }, [raceState?.lap, raceState?.cars])
 
+    const prevRef = React.useRef(null)
+    const [trends, setTrends] = React.useState({ scProb: 0, rainProb: 0, crashProb: 0 })
+
+    React.useEffect(() => {
+        if (predictions) {
+            if (prevRef.current) {
+                setTrends({
+                    scProb: predictions.scProb - prevRef.current.scProb,
+                    rainProb: predictions.rainProb - prevRef.current.rainProb,
+                    crashProb: predictions.crashProb - prevRef.current.crashProb,
+                })
+            }
+            prevRef.current = predictions
+        }
+    }, [predictions])
+
     if (!predictions) return null
 
     const items = [
-        { label: 'Safety Car', prob: predictions.scProb, color: 'var(--yellow)', icon: '🚗' },
-        { label: 'Incident', prob: predictions.crashProb, color: 'var(--red)', icon: '⚠️' },
-        { label: 'Rain', prob: predictions.rainProb, color: 'var(--blue)', icon: '🌧️' },
+        { label: 'Safety Car', key: 'scProb', prob: predictions.scProb, color: 'var(--yellow)', icon: '🚗' },
+        { label: 'Incident', key: 'crashProb', prob: predictions.crashProb, color: 'var(--red)', icon: '⚠️' },
+        { label: 'Rain', key: 'rainProb', prob: predictions.rainProb, color: 'var(--blue)', icon: '🌧️' },
     ]
 
     return (
@@ -56,12 +72,15 @@ const IncidentPredictor = ({ raceState }) => {
             background: 'rgba(0,0,0,0.4)', border: '1px solid var(--glass-border)',
         }}>
             <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-tertiary)', letterSpacing: '2px', marginBottom: '8px' }}>
-                📡 INCIDENT PREDICTION
+                📡 INCIDENT TRENDS
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {items.map(item => {
                     const pct = Math.round(item.prob * 100)
                     const isHigh = item.prob > 0.4
+                    const trend = trends[item.key]
+                    const trendSymbol = trend > 0.01 ? '↑' : trend < -0.01 ? '↓' : '→'
+                    const trendColor = trend > 0.01 ? 'var(--red)' : trend < -0.01 ? 'var(--green)' : 'var(--text-tertiary)'
                     return (
                         <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '0.75rem', width: '20px', textAlign: 'center' }}>{item.icon}</span>
@@ -74,11 +93,15 @@ const IncidentPredictor = ({ raceState }) => {
                                     boxShadow: isHigh ? `0 0 8px ${item.color}40` : 'none',
                                 }} />
                             </div>
-                            <span style={{
-                                fontSize: '0.7rem', fontFamily: 'var(--font-mono)', fontWeight: 700,
-                                width: '32px', textAlign: 'right',
-                                color: isHigh ? item.color : 'var(--text-tertiary)',
-                            }}>{pct}%</span>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', width: '38px' }}>
+                                <span style={{
+                                    fontSize: '0.7rem', fontFamily: 'var(--font-mono)', fontWeight: 700,
+                                    color: isHigh ? item.color : 'var(--text-tertiary)', lineHeight: 1
+                                }}>{pct}%</span>
+                                <span style={{ fontSize: '0.55rem', color: trendColor, fontWeight: 800, marginTop: '2px' }}>
+                                    {trendSymbol}
+                                </span>
+                            </div>
                         </div>
                     )
                 })}

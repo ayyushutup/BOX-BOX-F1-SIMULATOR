@@ -7,8 +7,52 @@ from ..models.race_state import (
     TireCompound, CarStatus, SectorType,
     TireState, Weather, Sector, Meta, Car, Track, RaceState, DRSZone,
     CarIdentity, CarTelemetry, CarSystems, CarStrategy, CarTiming, RaceControl,
-    DrivingMode
+    DrivingMode, TrackBoundary
 )
+import math
+
+def generate_oval_boundary(straight_len: float, radius: float, track_width: float = 15.0) -> TrackBoundary:
+    """Generate a synthetic 2D oval track boundary for RL training."""
+    inner_x, inner_y = [], []
+    outer_x, outer_y = [], []
+    
+    # Bottom straight (0,0) to (straight_len, 0)
+    steps = 20
+    for i in range(steps):
+        x = (i / steps) * straight_len
+        inner_x.append(x)
+        inner_y.append(radius)
+        outer_x.append(x)
+        outer_y.append(radius - track_width)
+        
+    # Right semi-circle
+    for i in range(steps):
+        angle = -math.pi/2 + (i / steps) * math.pi
+        inner_x.append(straight_len + (radius-track_width)*math.cos(angle))
+        inner_y.append(radius + (radius-track_width)*math.sin(angle))
+        outer_x.append(straight_len + radius*math.cos(angle))
+        outer_y.append(radius + radius*math.sin(angle))
+        
+    # Top straight
+    for i in range(steps):
+        x = straight_len - (i / steps) * straight_len
+        inner_x.append(x)
+        inner_y.append(radius + (radius-track_width))
+        outer_x.append(x)
+        outer_y.append(radius + radius)
+        
+    # Left semi-circle
+    for i in range(steps):
+        angle = math.pi/2 + (i / steps) * math.pi
+        inner_x.append((radius-track_width)*math.cos(angle))
+        inner_y.append(radius + (radius-track_width)*math.sin(angle))
+        outer_x.append(radius*math.cos(angle))
+        outer_y.append(radius + radius*math.sin(angle))
+        
+    return TrackBoundary(
+        inner_x=inner_x, inner_y=inner_y,
+        outer_x=outer_x, outer_y=outer_y
+    )
 
 
 # ============================================
@@ -66,7 +110,8 @@ TRACK_MONZA = Track(
     chaos_level=12,
     country_code="IT",
     avg_lap_time="1:22.100",
-    pit_lap_window="18-24"
+    pit_lap_window="18-24",
+    boundary=generate_oval_boundary(straight_len=2000.0, radius=285.0, track_width=15.0)
 )
 
 TRACK_SPA = Track(
@@ -122,13 +167,96 @@ TRACK_SILVERSTONE = Track(
     avg_lap_time="1:29.300",
     pit_lap_window="22-28"
 )
+TRACK_SUZUKA = Track(
+    id="suzuka_synthetic",
+    name="Suzuka Circuit (Synthetic)",
+    length=5807,
+    sectors=[
+        Sector(sector_type=SectorType.FAST, length=1936),
+        Sector(sector_type=SectorType.MEDIUM, length=1936),
+        Sector(sector_type=SectorType.MEDIUM, length=1935),
+    ],
+    weather=Weather(rain_probability=0.35, temperature=22.0, wind_speed=10.0),
+    drs_zones=[
+        DRSZone(start=0.0, end=0.15),
+    ],
+    svg_path="M 150 250 C 150 100, 350 100, 350 250 C 350 400, 150 400, 150 250",
+    abrasion="HIGH",
+    downforce="HIGH",
+    is_street_circuit=False,
+    sc_probability=25,
+    expected_overtakes=20,
+    pit_stop_loss=23.0,
+    chaos_level=40,
+    country_code="JP",
+    avg_lap_time="1:30.500",
+    pit_lap_window="18-24"
+)
+
+TRACK_INTERLAGOS = Track(
+    id="interlagos_synthetic",
+    name="Autódromo José Carlos Pace (Synthetic)",
+    length=4309,
+    sectors=[
+        Sector(sector_type=SectorType.FAST, length=1436),
+        Sector(sector_type=SectorType.MEDIUM, length=1436),
+        Sector(sector_type=SectorType.FAST, length=1437),
+    ],
+    weather=Weather(rain_probability=0.45, temperature=24.0, wind_speed=8.0),
+    drs_zones=[
+        DRSZone(start=0.0, end=0.18),
+        DRSZone(start=0.35, end=0.50),
+    ],
+    svg_path="M 200 150 L 400 150 L 300 350 Z",
+    abrasion="MEDIUM",
+    downforce="MEDIUM",
+    is_street_circuit=False,
+    sc_probability=35,
+    expected_overtakes=40,
+    pit_stop_loss=20.0,
+    chaos_level=55,
+    country_code="BR",
+    avg_lap_time="1:11.200",
+    pit_lap_window="26-32"
+)
+
+TRACK_AUSTIN = Track(
+    id="austin_synthetic",
+    name="Circuit of the Americas (Synthetic)",
+    length=5513,
+    sectors=[
+        Sector(sector_type=SectorType.FAST, length=1838),
+        Sector(sector_type=SectorType.MEDIUM, length=1838),
+        Sector(sector_type=SectorType.SLOW, length=1837),
+    ],
+    weather=Weather(rain_probability=0.1, temperature=30.0, wind_speed=12.0),
+    drs_zones=[
+        DRSZone(start=0.45, end=0.60),
+        DRSZone(start=0.0, end=0.12),
+    ],
+    svg_path="M 100 200 Q 250 50 400 200 Q 250 450 100 200",
+    abrasion="HIGH",
+    downforce="HIGH",
+    is_street_circuit=False,
+    sc_probability=20,
+    expected_overtakes=35,
+    pit_stop_loss=21.0,
+    chaos_level=30,
+    country_code="US",
+    avg_lap_time="1:36.100",
+    pit_lap_window="20-26"
+)
+
 
 # All available tracks
 TRACKS = {
     "monaco": TRACK_MONACO,
     "monza": TRACK_MONZA,
     "spa": TRACK_SPA,
-    "silverstone": TRACK_SILVERSTONE
+    "silverstone": TRACK_SILVERSTONE,
+    "suzuka": TRACK_SUZUKA,
+    "interlagos": TRACK_INTERLAGOS,
+    "austin": TRACK_AUSTIN
 }
 
 # PACE OF DIFFERENT TEAMS
