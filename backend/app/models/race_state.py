@@ -68,6 +68,9 @@ class EventType(str, Enum):
     DNF = "DNF"
     FASTEST_LAP = "FASTEST_LAP"
     MODE_CHANGE = "MODE_CHANGE"
+    WEATHER_CHANGE = "WEATHER_CHANGE"
+    RACE_FINISH = "RACE_FINISH"
+    LAP_COMPLETE = "LAP_COMPLETE"
 
 class Meta(BaseModel):
     """Simulation metadata for replay and determinism"""
@@ -157,7 +160,8 @@ class Event(BaseModel):
     lap: int = Field(ge=0, description="Lap at which the event occurred")
     event_type: EventType
     driver: str | None = Field(default=None, description="Driver involved in the event")
-    description: str = Field(description="Description of the event")
+    payload: dict = Field(default_factory=dict, description="Structured event data")
+    description: str = Field(default="", description="Human-readable description (built from payload)")
 
 class RaceState(BaseModel):
     """
@@ -177,6 +181,7 @@ class RaceState(BaseModel):
     # Race control (mutually exclusive states)
     race_control: RaceControl = Field(default=RaceControl.GREEN)
     drs_enabled: bool = Field(default=False)
+    sc_deploy_lap: int | None = Field(default=None, description="Lap when SC was deployed (None = no active SC)")
 
 
 
