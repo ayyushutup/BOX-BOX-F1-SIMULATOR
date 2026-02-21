@@ -134,6 +134,7 @@ class Car(BaseModel):
     pit_stops: int = Field(ge=0)
     status: CarStatus = CarStatus.RACING
     driver_skill: float = Field(ge=0.0, le=1.0, default=0.90)
+    personality: dict = Field(default_factory=dict, description="Driver personality traits")
     in_pit_lane: bool = Field(default=False)
     pit_lane_progress: float = Field(ge=0.0, le=1.0, default=0.0)    
     

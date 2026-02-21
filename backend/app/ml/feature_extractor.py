@@ -45,6 +45,13 @@ def extract_features(state: RaceState) -> pd.DataFrame:
             "sc_active": 1 if state.race_control == RaceControl.SAFETY_CAR else 0,
             "vsc_active": 1 if state.race_control == RaceControl.VSC else 0,
             "drs_enabled": 1 if state.drs_enabled else 0,
+            
+            # --- Driver Personality ---
+            "aggression": car.personality.get("aggression", 0.9),
+            "consistency": car.personality.get("consistency", 0.9),
+            "wet_skill": car.personality.get("wet_skill", 0.9),
+            "tire_management": car.personality.get("tire_management", 0.9),
+            "risk_tolerance": car.personality.get("risk_tolerance", 0.85),
         }
 
         features.append(features_row)
