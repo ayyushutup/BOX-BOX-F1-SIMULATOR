@@ -737,11 +737,29 @@ Added `schema_version: int` to `RaceState` for future persistence/replay compati
 
 ---
 
+## 🖥️ UI Overhaul: Intelligence Console (Feb 21, 2026)
+
+Replaced the expensive visual track rendering with rigorous analytical panels to focus entirely on motorsport intelligence and Expected Value (EV).
+
+### Visual Layers Removed
+- `TrackMap.jsx` - Replaced by pure data layouts.
+
+### Analytical Features Added
+- **Probability Evolution (`ProbabilityGraph.jsx`)**: Live Recharts graph tracking driver win probability vectors.
+- **Expected Value Tree (`StrategyTree.jsx`)**: Visual decision tree determining if a pit stop has positive/negative positional EV under current conditions.
+- **Impact Sensitivity (`SensitivityAnalysis.jsx`)**: At-a-glance view of which simulated variables are moving predictions the most.
+- **Chaos Meter (`VolatilityIndex.jsx`)**: A 0-100 volatility index indicating the stability or strategic unpredictability of the race.
+- **Scenario Injector (`ScenarioControls.jsx`)**: Top-level macro controls to instantly modify conditions and watch the prediction engine react.
+
+---
+
 ## 🔄 Next Steps
 
-1. **Complete Phase C** — Live ML updates during simulation, confidence curves
-2. **Deferred refactors** — `cars` dict + `classification` list, `Event.payload`, Track enums
-3. **Begin Phase D** — FastF1 data ingestion and reality calibration
+1. **Wire Scenario Controls to Engine:** Connect the new `ScenarioControls.jsx` inputs (Aggression, SC Probability, Tire Deg multipliers) to backend WebSocket commands so they dynamically mutate the `RaceState`.
+2. **Complete Phase D (Reality Injection):** 
+   - Build `FastF1DataCollector` to start ingesting historical session telemetry.
+   - Build `RaceStateMapper` to convert messy FastF1 reality into clean `RaceState` snapshots that our engine understands.
+3. **Simulation vs Reality Polish:** Build the visual comparison tools (`SimVsRealityComparison.jsx`) so we can quantify exactly where our simulation engine diverges from actual F1 history.
 
 ---
 

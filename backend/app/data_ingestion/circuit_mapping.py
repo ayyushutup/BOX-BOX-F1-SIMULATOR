@@ -5,7 +5,7 @@ FastF1 uses CircuitShortName / CircuitKey, we need to match those
 to the 4 tracks we have in data.py.
 """
 
-from ..simulation.data import TRACKS
+from ..data.tracks import TRACKS
 
 # FastF1 CircuitShortName -> our track ID
 # Checked against fastf1.get_event_schedule() output

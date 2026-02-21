@@ -16,7 +16,7 @@ from ..models.race_state import (
     CarIdentity, CarTelemetry, CarSystems, CarStrategy, CarTiming,
     DrivingMode
 )
-from ..simulation.data import DRIVERS
+from ..data.tracks import DRIVERS
 from .circuit_mapping import get_track_for_circuit
 
 

@@ -1,180 +1,89 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Header from './components/Header'
-import TrackMap from './components/TrackMap'
+import StrategyTree from './components/StrategyTree'
+import SensitivityAnalysis from './components/SensitivityAnalysis'
+import VolatilityIndex from './components/VolatilityIndex'
+import ScenarioControls from './components/ScenarioControls'
 import PositionTower from './components/PositionTower'
-import EventLog from './components/EventLog'
-import Controls from './components/Controls'
 import RaceControlStatus from './components/RaceControlStatus';
-import TelemetryPanel from './components/TelemetryPanel'
 import PredictionPanel from './components/PredictionPanel'
-import AIEngineer from './components/AIEngineer'
 import IncidentPredictor from './components/IncidentPredictor'
-import RaceTimeline from './components/RaceTimeline'
 import ScenarioPicker from './components/ScenarioPicker'
-import ScenarioResults from './components/ScenarioResults'
-import { useSoundEffects } from './hooks/useSoundEffects'
+import DriverStrategyPanel from './components/DriverStrategyPanel'
+import OutcomeDistribution from './components/OutcomeDistribution'
+import FinishDistributionChart from './components/FinishDistributionChart'
+import ConfidenceIndex from './components/ConfidenceIndex'
 import './index.css'
 
 function App() {
-  // Views: 'scenarios' | 'simulation' | 'results'
+  // Views: 'scenarios' | 'simulation'
   const [view, setView] = useState('scenarios')
   const [selectedDriver, setSelectedDriver] = useState(null)
-  const [trackMode, setTrackMode] = useState('SPECTATOR')
 
-  const [isConnected, setIsConnected] = useState(false)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [raceState, setRaceState] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [baselineState, setBaselineState] = useState(null) // Holds { cars: [] }
   const [predictions, setPredictions] = useState(null)
-  const [speed, setSpeed] = useState(1)
-  const [soundEnabled, setSoundEnabled] = useState(true)
-  const [logCollapsed, setLogCollapsed] = useState(true)
+
   const [activeScenario, setActiveScenario] = useState(null)
-  const [scenarioResult, setScenarioResult] = useState(null)
-  const wsRef = useRef(null)
-  const { processEvents } = useSoundEffects(soundEnabled)
+  const [currentModifiers, setCurrentModifiers] = useState({})
 
-  // Connect and init a scenario via WebSocket
-  const connectToScenario = useCallback((scenarioId) => {
-    if (wsRef.current) {
-      wsRef.current.close()
-    }
-
-    const ws = new WebSocket('ws://localhost:8000/ws/race')
-    wsRef.current = ws
-
-    ws.onopen = () => {
-      console.log('Connected to Scenario Server')
-      setIsConnected(true)
-      ws.send(JSON.stringify({
-        command: 'init_scenario',
-        scenario_id: scenarioId
-      }))
-    }
-
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data)
-
-      if (message.type === 'init') {
-        setRaceState(message.data)
-        if (message.scenario) {
-          setActiveScenario(message.scenario)
-        }
-        if (message.data?.events) {
-          processEvents(message.data.events)
-        }
-      } else if (message.type === 'update' || message.type === 'state') {
-        setRaceState(message.data)
-        if (message.data?.events) {
-          processEvents(message.data.events)
-        }
-        if (message.predictions) {
-          setPredictions(message.predictions)
-        }
-      } else if (message.type === 'finished') {
-        setRaceState(message.data)
-        setIsPlaying(false)
-        // Auto-fetch results when scenario finishes
-        if (activeScenario) {
-          fetchResults(activeScenario.id)
-        }
-      }
-    }
-
-    ws.onclose = () => {
-      console.log('Disconnected')
-      setIsConnected(false)
-      setIsPlaying(false)
-    }
-
-    return () => {
-      if (ws.readyState === WebSocket.OPEN) ws.close()
-    }
-  }, [activeScenario])
-
-  const fetchResults = (scenarioId) => {
-    fetch(`http://localhost:8000/api/scenarios/${scenarioId}/run`, { method: 'POST' })
-      .then(res => res.json())
-      .then(data => {
-        if (data.result) {
-          setScenarioResult(data.result)
-          setView('results')
-        }
+  // Fetch prediction from the stateless backend
+  const fetchPrediction = useCallback(async (scenario, modifiers = {}) => {
+    setIsLoading(true)
+    try {
+      const response = await fetch('http://localhost:8000/api/scenarios/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scenario_id: scenario.id,
+          modifiers: modifiers
+        })
       })
-      .catch(err => console.error('Failed to fetch results:', err))
-  }
 
-  const handleSelectScenario = (scenarioId) => {
-    setView('simulation')
-    setScenarioResult(null)
-    connectToScenario(scenarioId)
+      if (!response.ok) throw new Error('Failed to fetch prediction')
+
+      const data = await response.json()
+
+      setBaselineState(data.baseline_state)
+      setPredictions(data.predictions)
+      setCurrentModifiers(modifiers)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  const handleSelectScenario = async (scenarioId) => {
+    // 1. Fetch scenario details to get the metadata
+    try {
+      const res = await fetch(`http://localhost:8000/api/scenarios/${scenarioId}`)
+      const data = await res.json()
+      if (data.scenario) {
+        setActiveScenario(data.scenario)
+        setView('simulation')
+        // 2. Initial prediction fetch with no modifiers
+        await fetchPrediction(data.scenario, {})
+      }
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   const handleBackToScenarios = () => {
-    if (wsRef.current) wsRef.current.close()
-    setIsPlaying(false)
     setView('scenarios')
-    setRaceState(null)
+    setBaselineState(null)
     setPredictions(null)
     setActiveScenario(null)
-    setScenarioResult(null)
+    setCurrentModifiers({})
   }
 
-  const handleViewResults = () => {
+  const handleModifiersChange = useCallback((newModifiers) => {
     if (activeScenario) {
-      fetchResults(activeScenario.id)
+      fetchPrediction(activeScenario, { ...currentModifiers, ...newModifiers })
     }
-  }
+  }, [activeScenario, currentModifiers, fetchPrediction])
 
-  const handleReplay = () => {
-    if (activeScenario) {
-      handleSelectScenario(activeScenario.id)
-    }
-  }
-
-  const handlePlay = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ command: 'start', speed }))
-      setIsPlaying(true)
-    }
-  }, [speed])
-
-  const handlePause = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ command: 'pause' }))
-      setIsPlaying(false)
-    }
-  }, [])
-
-  const handleStep = useCallback((count = 1) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ command: 'step', count }))
-    }
-  }, [])
-
-  const handleSpeedChange = useCallback((newSpeed) => {
-    setSpeed(newSpeed)
-    if (isPlaying && wsRef.current) {
-      wsRef.current.send(JSON.stringify({ command: 'start', speed: newSpeed }))
-    }
-  }, [isPlaying])
-
-  const handleRaceControl = useCallback((type) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ command: 'event', type }))
-    }
-  }, [])
-
-  const handleWeatherControl = useCallback((type) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ command: 'event', type: 'weather', value: type }))
-    }
-  }, [])
-
-  const sendDriverCommand = useCallback((driver, cmd) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ command: 'driver_command', driver, cmd }))
-    }
-  }, [])
 
   // ==================
   // VIEW: SCENARIOS
@@ -184,38 +93,8 @@ function App() {
   }
 
   // ==================
-  // VIEW: RESULTS
+  // VIEW: SIMULATION (Stateless Engine Dashboard)
   // ==================
-  if (view === 'results') {
-    return (
-      <ScenarioResults
-        result={scenarioResult}
-        onBack={handleBackToScenarios}
-        onReplay={handleReplay}
-      />
-    )
-  }
-
-  // ==================
-  // VIEW: CONNECTING
-  // ==================
-  if (!isConnected && view === 'simulation') {
-    return (
-      <div className="app-container connecting-screen">
-        <div className="race-loader">
-          <h1>INITIALIZING SCENARIO</h1>
-          <div className="pulse-bar"></div>
-          <p>CONNECTING TO SIMULATION ENGINE ON PORT 8000</p>
-        </div>
-      </div>
-    )
-  }
-
-  // ==================
-  // VIEW: SIMULATION (Live playback)
-  // ==================
-  const isFinished = raceState?.is_finished
-
   return (
     <div className="app-container">
       {/* Scenario Header */}
@@ -229,113 +108,63 @@ function App() {
             <span className="scenario-active-name">{activeScenario.name}</span>
           </div>
         )}
-        <button
-          className="btn-back"
-          onClick={() => setSoundEnabled(!soundEnabled)}
-          title={soundEnabled ? 'Mute' : 'Unmute'}
-          style={{ minWidth: '36px', textAlign: 'center' }}
-        >
-          {soundEnabled ? '🔊' : '🔇'}
-        </button>
-        {isFinished && (
-          <button className="btn-results" onClick={handleViewResults}>
-            📊 VIEW RESULTS
-          </button>
-        )}
       </div>
 
       <Header
-        lap={raceState?.lap || 0}
-        totalLaps={raceState?.total_laps || 0}
-        time={raceState?.time_ms || 0}
+        lap={activeScenario?.starting_lap || 0}
+        totalLaps={activeScenario?.total_laps || 0}
+        time={0}
       />
 
       <div className="w-full relative" style={{ paddingBottom: '120px' }}>
-        <main className="main-grid w-full">
-          <div className="panel track-panel">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <h2 className="panel-title" style={{ marginBottom: 0 }}>TRACK MAP</h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontWeight: 900, color: 'var(--text-dim)' }}>{raceState?.track?.name?.toUpperCase()}</span>
-                <button
-                  className="btn btn-small"
-                  style={{ fontSize: '0.6rem', padding: '4px 8px', background: trackMode === 'ENGINEER' ? 'var(--blue)' : '#333', color: 'white', border: 'none' }}
-                  onClick={() => setTrackMode(trackMode === 'SPECTATOR' ? 'ENGINEER' : 'SPECTATOR')}
-                >
-                  {trackMode === 'SPECTATOR' ? 'VIEW: ENG' : 'VIEW: SPEC'}
-                </button>
-              </div>
+        {/* Pass down modifying handler to the Scenario Controls */}
+        <ScenarioControls onModifierChange={handleModifiersChange} isLoading={isLoading} />
+
+        {/* NEW 3-ZONE LAYOUT */}
+        <main style={{ display: 'grid', gridTemplateColumns: '1.2fr 2fr 1.2fr', gap: '16px', height: 'calc(100vh - 210px)', opacity: isLoading ? 0.5 : 1, transition: 'opacity 0.2s ease' }}>
+
+          {/* LEFT: Standings + Scenario Controls */}
+          <div className="zone-left" style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden' }}>
+            <div className="panel tower-panel" style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <h2 className="panel-title" style={{ flexShrink: 0 }}>BASELINE STANDINGS</h2>
+              <PositionTower
+                cars={baselineState?.cars || []}
+                onSelectDriver={setSelectedDriver}
+                selectedDriver={selectedDriver}
+              />
             </div>
-            <TrackMap cars={raceState?.cars || []} track={raceState?.track} raceControl={raceState?.race_control} mode={trackMode} />
+            <RaceControlStatus raceState={null} />
           </div>
 
-          <div className="panel tower-panel">
-            <h2 className="panel-title">LIVE STANDINGS</h2>
-            <PositionTower
-              cars={raceState?.cars || []}
-              onSelectDriver={setSelectedDriver}
-              selectedDriver={selectedDriver}
-            />
+          {/* CENTER: Probability (Hero) + EV Graphs */}
+          <div className="zone-center" style={{ display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', paddingRight: '4px' }}>
+            <OutcomeDistribution predictions={predictions} raceState={baselineState} />
+            <FinishDistributionChart predictions={predictions} selectedDriver={selectedDriver} />
           </div>
 
-          <div className="panel context-panel" style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
-            <RaceControlStatus raceState={raceState} />
-            <PredictionPanel predictions={predictions} raceState={raceState} />
-            <AIEngineer raceState={raceState} selectedDriver={selectedDriver} />
-            <IncidentPredictor raceState={raceState} />
-            <div className="events-wrapper" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', ...(logCollapsed ? {} : { flex: 1 }) }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setLogCollapsed(!logCollapsed)}>
-                <h2 className="panel-title" style={{ marginBottom: 0 }}>SCENARIO LOG</h2>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', padding: '2px 8px' }}>{logCollapsed ? '▸ SHOW' : '▾ HIDE'}</span>
-              </div>
-              {!logCollapsed && <EventLog events={raceState?.events || []} />}
-            </div>
+          {/* RIGHT: Decision Tree + Sensitivity + Volatility */}
+          <div className="zone-right" style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
+            <StrategyTree raceState={baselineState} />
+            <SensitivityAnalysis raceState={baselineState} />
+            <VolatilityIndex raceState={baselineState} />
+            <ConfidenceIndex predictions={predictions} />
+            <PredictionPanel predictions={predictions} raceState={baselineState} />
+            <IncidentPredictor raceState={baselineState} />
           </div>
+
         </main>
 
-        {/* TELEMETRY VIEW */}
-        {(() => {
-          const sortedCars = (raceState?.cars || []).slice().sort((a, b) => a.position - b.position)
-          const currentCarIdx = sortedCars.findIndex(c => c.driver === selectedDriver)
-          const driverAhead = currentCarIdx > 0 ? sortedCars[currentCarIdx - 1] : null
-
+        {/* BOTTOM: Driver Strategy Breakdown (Replaces Telemetry) */}
+        {selectedDriver && (() => {
+          const selectedCar = baselineState?.cars?.find(c => c.driver === selectedDriver);
+          if (!selectedCar) return null;
           return (
             <div className="w-full mt-4">
-              <TelemetryPanel
-                selectedDriver={selectedDriver}
-                car={raceState?.cars?.find(c => c.driver === selectedDriver)}
-                driverAhead={driverAhead}
-                sendCommand={sendDriverCommand}
-              />
+              <DriverStrategyPanel car={selectedCar} raceState={baselineState} />
             </div>
-          )
+          );
         })()}
 
-        {/* Bottom Controls */}
-        {view === 'simulation' && (
-          <div className="bottom-panel-container flex flex-col gap-2 fixed bottom-4 left-1/2 -translate-x-1/2 w-[95%] max-w-[1200px] z-50">
-            <RaceTimeline
-              totalLaps={raceState?.total_laps || 0}
-              currentLap={raceState?.lap || 0}
-              events={raceState?.events || []}
-              onSkipToLap={() => { }}
-            />
-            <div className="bottom-panel">
-              <Controls
-                isPlaying={isPlaying}
-                onPlay={handlePlay}
-                onPause={handlePause}
-                onStep={handleStep}
-                speed={speed}
-                onSpeedChange={handleSpeedChange}
-                onRaceControl={handleRaceControl}
-                onWeatherControl={handleWeatherControl}
-                onSkipToLap={() => { }}
-                onSimulateStrategy={() => { }}
-              />
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )
