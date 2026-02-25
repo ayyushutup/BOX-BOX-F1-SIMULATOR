@@ -1,122 +1,92 @@
 """
-Scenario type definitions.
+Scenario configuration type definitions.
+Replaces the old prebuilt scenario types with a fully parameter-driven structure.
 """
-
 from pydantic import BaseModel, Field
-from typing import Optional
-from enum import Enum
-from ..models.race_state import (
-    TireCompound, Weather, RaceControl, DrivingMode, CarStatus
-)
+from typing import Optional, Dict, List
+from ..models.race_state import TireCompound
 
+class TeamConfig(BaseModel):
+    name: str = ""
+    engine_power: float = Field(ge=0.0, le=2.0, default=1.0)
+    aero_efficiency: float = Field(ge=0.0, le=2.0, default=1.0)
+    tire_deg_multiplier: float = Field(ge=0.0, le=2.0, default=1.0)
+    pit_stop_speed: float = Field(ge=0.0, le=2.0, default=1.0)
+    reliability: float = Field(ge=0.0, le=2.0, default=1.0)
+    strategy_bias: float = Field(ge=0.0, le=2.0, default=1.0)
 
-class ScenarioType(str, Enum):
-    # Categories of F1 scenarios.
-    RACE_SITUATION = "RACE_SITUATION"         # Mid-race drama
-    STRATEGY_DILEMMA = "STRATEGY_DILEMMA"     # Pit strategy decisions
-    WEATHER_TRANSITION = "WEATHER_TRANSITION" # Changing conditions
-    TESTING_SESSION = "TESTING_SESSION"       # Car setup and performance testing
-    BATTLE = "BATTLE"                         # Head-to-head driver battle
+class CarEngineeringConfig(BaseModel):
+    downforce_level: float = Field(ge=0.0, le=2.0, default=1.0)
+    drag_coefficient: float = Field(ge=0.0, le=2.0, default=1.0)
+    ers_capacity: float = Field(ge=0.0, le=2.0, default=1.0)
+    ers_recharge_rate: float = Field(ge=0.0, le=2.0, default=1.0)
+    brake_wear_rate: float = Field(ge=0.0, le=2.0, default=1.0)
+    cooling_efficiency: float = Field(ge=0.0, le=2.0, default=1.0)
+    fuel_consumption_multiplier: float = Field(ge=0.0, le=2.0, default=1.0)
 
+class DriverPersonalityConfig(BaseModel):
+    driver_id: str = ""
+    aggression: float = Field(ge=0.0, le=2.0, default=1.0)
+    risk_tolerance: float = Field(ge=0.0, le=2.0, default=1.0)
+    overtake_confidence: float = Field(ge=0.0, le=2.0, default=1.0)
+    defensive_skill: float = Field(ge=0.0, le=2.0, default=1.0)
+    tire_preservation: float = Field(ge=0.0, le=2.0, default=1.0)
+    wet_weather_skill: float = Field(ge=0.0, le=2.0, default=1.0)
+    pressure_handling: float = Field(ge=0.0, le=2.0, default=1.0)
+    radio_emotionality: float = Field(ge=0.0, le=2.0, default=1.0)
 
-class ScenarioDifficulty(str, Enum):
-    """How chaotic the scenario gets."""
-    EASY = "EASY"
-    MEDIUM = "MEDIUM"
-    HARD = "HARD"
-
-
-class ScenarioCar(BaseModel):
-    """A car's initial state in the scenario."""
-    driver: str = Field(min_length=3, max_length=3)
+class GridCarConfig(BaseModel):
+    driver: str
     team: str
-    position: int = Field(ge=1, le=22)
-    lap: int = Field(ge=0, default=0)
-    lap_progress: float = Field(ge=0.0, le=1.0, default=0.0)
+    position: int
     tire_compound: TireCompound = TireCompound.MEDIUM
-    tire_age: int = Field(ge=0, default=0)
-    tire_wear: float = Field(ge=0.0, le=1.0, default=0.0)
-    fuel_kg: float = Field(ge=0.0, default=100.0)
-    pit_stops: int = Field(ge=0, default=0)
-    driving_mode: DrivingMode = DrivingMode.BALANCED
-    driver_skill: Optional[float] = None  # None = use default from DRIVERS data
+    tire_age: int = 0
+    tire_wear: float = 0.0
+    fuel_kg: float = 100.0
+    pit_stops: int = 0
 
+class RaceStructureConfig(BaseModel):
+    track_id: str = "monaco"
+    total_laps: int = Field(ge=1, le=100, default=50)
+    starting_lap: int = Field(ge=0, le=99, default=0)
+    grid: List[GridCarConfig] = Field(default_factory=list)
+    drs_enabled: bool = True
+    sc_enabled: bool = True
+    fuel_limit_kg: float = 110.0
+    track_grip_baseline: float = 1.0
+    pit_lane_time_delta: float = 20.0
 
-class ForcedEvent(BaseModel):
-    """An event that MUST happen at a specific point in the scenario."""
-    trigger_lap: int = Field(ge=0, description="Lap number when this fires")
-    trigger_progress: float = Field(
-        ge=0.0, le=1.0, default=0.0,
-        description="Lap progress (0.0-1.0) when this fires"
-    )
-    event: str = Field(description="What happens: SAFETY_CAR, VSC, RAIN, DRY, PIT_DRIVER")
-    target_driver: Optional[str] = Field(
-        default=None,
-        description="Driver this event targets (e.g. for forced pit stop)"
-    )
-    payload: dict = Field(default_factory=dict, description="Extra event data")
+class WeatherTimelineEvent(BaseModel):
+    start_lap: int
+    rain_probability: float
+    temperature: float
 
+class WeatherConfig(BaseModel):
+    timeline: List[WeatherTimelineEvent] = Field(default_factory=list)
+    drying_rate: float = Field(ge=0.0, le=2.0, default=1.0)
+    forecast_accuracy: float = Field(ge=0.0, le=1.0, default=0.8)
 
-class Scenario(BaseModel):
-    """
-    A complete scenario definition.
-    Contains everything needed to set up and run a focused simulation.
-    """
-    id: str = Field(description="Unique scenario identifier")
-    name: str = Field(description="Display name")
-    description: str = Field(description="What this scenario tests or explores")
-    type: ScenarioType
-    difficulty: ScenarioDifficulty = ScenarioDifficulty.MEDIUM
-    
-    # Track setup
-    track_id: str = Field(default="monaco", description="Which track to use")
-    
-    # Race conditions at start
-    starting_lap: int = Field(ge=0, default=0, description="What lap does this start at")
-    total_laps: int = Field(gt=0, description="How many laps to simulate from starting_lap")
-    weather: Optional[Weather] = None  # None = use track default
-    race_control: RaceControl = Field(default=RaceControl.GREEN)
-    
-    # Cars in this scenario
-    cars: list[ScenarioCar] = Field(min_length=1, description="Cars and their initial states")
-    
-    # Scripted events 
-    forced_events: list[ForcedEvent] = Field(
-        default_factory=list,
-        description="Events injected at specific points"
-    )
-    
-    # Simulation config
-    seed: int = Field(default=42, description="RNG seed for determinism")
-    
-    # Metadata for the UI
-    tags: list[str] = Field(default_factory=list, description="Tags for filtering")
-    icon: str = Field(default="🏁", description="Emoji icon for the scenario card")
+class ChampionshipConfig(BaseModel):
+    championship_points_gap: int = 0
+    must_finish: bool = False
+    team_orders_priority: float = 0.5
+    morale_baseline: float = 1.0
+    contract_pressure: float = 0.5
 
+class ChaosConfig(BaseModel):
+    mechanical_randomness: float = Field(ge=0.0, le=2.0, default=1.0)
+    incident_frequency: float = Field(ge=0.0, le=2.0, default=1.0)
+    safety_car_probability: float = Field(ge=0.0, le=2.0, default=1.0)
+    ai_irrationality: float = Field(ge=0.0, le=2.0, default=1.0)
+    weather_unpredictability: float = Field(ge=0.0, le=2.0, default=1.0)
 
-class ScenarioResult(BaseModel):
-    """Outcome of running a scenario."""
-    scenario_id: str
-    scenario_name: str
+class ScenarioConfig(BaseModel):
+    race_structure: RaceStructureConfig = Field(default_factory=RaceStructureConfig)
+    weather: WeatherConfig = Field(default_factory=WeatherConfig)
+    teams: Dict[str, TeamConfig] = Field(default_factory=dict)
+    engineering: CarEngineeringConfig = Field(default_factory=CarEngineeringConfig)
+    drivers: Dict[str, DriverPersonalityConfig] = Field(default_factory=dict)
+    championship: ChampionshipConfig = Field(default_factory=ChampionshipConfig)
+    chaos: ChaosConfig = Field(default_factory=ChaosConfig)
     
-    # Final standings
-    final_positions: list[dict] = Field(description="Final classification of cars")
-    
-    # Key moments
-    key_events: list[dict] = Field(
-        default_factory=list,
-        description="Important events that occurred"
-    )
-    
-    # Stats
-    total_ticks: int = Field(ge=0)
-    total_overtakes: int = Field(ge=0, default=0)
-    total_pit_stops: int = Field(ge=0, default=0)
-    dnfs: list[str] = Field(default_factory=list, description="Drivers who DNF'd")
-    fastest_lap: Optional[dict] = None  # {"driver": "VER", "time": 73.2}
-    
-    # Strategy summary
-    strategy_summary: list[dict] = Field(
-        default_factory=list,
-        description="Per-driver strategy breakdown"
-    )
+    seed: int = 42

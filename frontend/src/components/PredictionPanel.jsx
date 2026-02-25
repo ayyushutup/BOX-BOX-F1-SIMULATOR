@@ -160,16 +160,33 @@ const PredictionPanel = ({ predictions, raceState }) => {
                                                     </span>
                                                 )}
                                             </div>
-                                            {/* AI Reason Tags (Mocked for top 2) */}
-                                            {isTopDriver && (
+                                            {/* AI Reason Tags (Decision Impact Causal Linkage) */}
+                                            {(isTopDriver || index === 1) && showDelta && (
                                                 <div style={{ padding: '2px 0 2px 50px', display: 'flex', gap: '6px', fontSize: '0.55rem', fontFamily: 'var(--font-mono)' }}>
-                                                    <span style={{ background: 'rgba(0, 220, 100, 0.1)', color: '#00dc64', padding: '2px 6px', borderRadius: '4px' }}>Track Pos +3.2%</span>
-                                                    <span style={{ background: 'rgba(0, 220, 100, 0.1)', color: '#00dc64', padding: '2px 6px', borderRadius: '4px' }}>Tyre Life +1.8%</span>
-                                                </div>
-                                            )}
-                                            {index === 1 && (
-                                                <div style={{ padding: '2px 0 2px 50px', display: 'flex', gap: '6px', fontSize: '0.55rem', fontFamily: 'var(--font-mono)' }}>
-                                                    <span style={{ background: 'rgba(255, 68, 68, 0.1)', color: '#ff4444', padding: '2px 6px', borderRadius: '4px' }}>ERS Deficit -0.9%</span>
+                                                    {(() => {
+                                                        const isPos = delta > 0;
+                                                        const color = isPos ? '#00dc64' : '#ff4444';
+                                                        const bg = isPos ? 'rgba(0, 220, 100, 0.1)' : 'rgba(255, 68, 68, 0.1)';
+
+                                                        const reasons = [];
+                                                        const rainProb = activeConfig?.weather?.timeline?.[0]?.rain_probability || 0;
+
+                                                        // Fallback drivers object properly
+                                                        const drivers = activeConfig?.drivers || {};
+                                                        const aggression = (drivers[driver] && drivers[driver].aggression) ? drivers[driver].aggression : 1.0;
+                                                        const scProb = activeConfig?.chaos?.safety_car_probability || 1.0;
+                                                        const tireDeg = activeConfig?.engineering?.tire_deg_multiplier || 1.0;
+
+                                                        if (rainProb > 0.4) reasons.push(isPos ? 'Wet Mastery (+)' : 'Wet Pace (-)');
+                                                        if (aggression > 1.1) reasons.push(isPos ? 'Overtake Extracted (+)' : 'Risk Limit (-)');
+                                                        if (scProb > 1.2) reasons.push(isPos ? 'SC Strategy Win (+)' : 'Track Pos Vulnerable (-)');
+                                                        if (tireDeg < 0.9) reasons.push(isPos ? 'Tyre Life Extension (+)' : 'Warmup Deficit (-)');
+                                                        if (reasons.length === 0) reasons.push(isPos ? 'Raw Pace Adv (+)' : 'Pace Deficit (-)');
+
+                                                        return reasons.slice(0, 2).map((r, i) => (
+                                                            <span key={i} style={{ background: bg, color: color, padding: '2px 6px', borderRadius: '4px' }}>{r}</span>
+                                                        ))
+                                                    })()}
                                                 </div>
                                             )}
                                         </div>

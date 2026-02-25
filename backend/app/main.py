@@ -9,8 +9,8 @@ from pydantic import BaseModel
 from typing import Optional, Dict
 
 from .data.tracks import TRACKS
-from .scenarios.catalog import SCENARIO_CATALOG
-from .scenarios.runner import build_initial_state
+from .scenarios.types import ScenarioConfig
+from .scenarios.compiler import compile_scenario
 from .api import ml, reality
 from .ml.predictor import RacePredictor
 
@@ -79,79 +79,41 @@ def get_tracks():
 # SCENARIO PREDICTION API
 # =====================
 
-@app.get("/api/scenarios")
-def list_scenarios():
-    """Get all available scenarios from the catalog"""
-    scenarios = []
-    for scenario in SCENARIO_CATALOG.values():
-        scenarios.append({
-            "id": scenario.id,
-            "name": scenario.name,
-            "description": scenario.description,
-            "type": scenario.type.value,
-            "difficulty": scenario.difficulty.value,
-            "track_id": scenario.track_id,
-            "starting_lap": scenario.starting_lap,
-            "total_laps": scenario.total_laps,
-            "car_count": len(scenario.cars),
-            "tags": scenario.tags,
-            "icon": scenario.icon,
-            "seed": scenario.seed,
-        })
-    return {"scenarios": scenarios}
-
-
-class PredictRequest(BaseModel):
-    scenario_id: str
-    modifiers: Optional[Dict[str, float]] = None
-
-
 @app.post("/api/scenarios/predict")
-def predict_scenario_outcome(request: PredictRequest):
+def predict_scenario_outcome(config: ScenarioConfig):
     """
-    Stateless endpoint that takes a scenario, applies user modifications,
-    and returns an instant Monte Carlo prediction distribution.
+    Stateless endpoint that takes a custom parameter-driven ScenarioConfig,
+    compiles it, and returns an instant Monte Carlo prediction distribution.
     """
-    scenario = SCENARIO_CATALOG.get(request.scenario_id)
-    if not scenario:
-        raise HTTPException(status_code=404, detail=f"Scenario '{request.scenario_id}' not found")
-
-    # 1. Build base state
-    state = build_initial_state(scenario)
+    # 1. Compile state
+    state = compile_scenario(config)
     
-    # 2. Apply dynamic modifiers from the frontend (if any)
-    if request.modifiers:
-        # Example: Increase tire wear for all cars based on user sliding a "Tire Deg" slider
-        deg_multiplier = request.modifiers.get("tire_deg", 1.0)
-        agg_multiplier = request.modifiers.get("aggression", 1.0)
-        sc_prob_multiplier = request.modifiers.get("sc_prob", 1.0)
-        
-        state.track.sc_probability = int(state.track.sc_probability * sc_prob_multiplier)
-        
-        for car in state.cars:
-            car.telemetry.tire_state.wear = min(0.99, car.telemetry.tire_state.wear * deg_multiplier)
-            car.driver_skill = min(0.99, car.driver_skill * agg_multiplier)
-
-    # 3. Predict outcomes
+    # 2. Predict outcomes
     try:
         predictions = ml_predictor.predict(state)
         if not predictions:
             raise HTTPException(status_code=500, detail="ML Predictor failed to generate results.")
             
         return {
-            "scenario_id": scenario.id,
+            "scenario_id": "custom",
             "predictions": predictions,
             "baseline_state": {
-                # Return the baseline grid state so the frontend knows who is where
+                                                                                # Return the baseline grid state so the frontend knows who is where
                 "cars": [
                     {
                         "driver": c.identity.driver,
                         "team": c.identity.team,
                         "position": c.timing.position,
                         "gap_to_leader": c.timing.gap_to_leader,
+                        "interval": c.timing.interval,
                         "tire_compound": c.telemetry.tire_state.compound.value,
                         "tire_wear": c.telemetry.tire_state.wear,
+                        "tire_age": c.telemetry.tire_state.age,
                         "pit_stops": c.pit_stops,
+                        "in_pit_lane": c.in_pit_lane,
+                        "drs_active": c.systems.drs_active,
+                        "driving_mode": c.strategy.driving_mode.value,
+                        "best_lap_time": c.timing.best_lap_time,
                     }
                     for c in sorted(state.cars, key=lambda c: c.timing.position)
                 ]
