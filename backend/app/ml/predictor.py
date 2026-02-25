@@ -120,9 +120,28 @@ class RacePredictor:
         win_prob_dict = {}
         podium_prob_dict = {}
         
+        # Calculate dynamic scenario variance (flattens probabilities when chaos/sc is high)
+        # Using rough baselines (chaos~50, sc~30) to estimate multiplier
+        avg_chaos = state.track.chaos_level / 50.0
+        avg_sc = state.track.sc_probability / 30.0
+        env_variance = max(0.0, ((avg_chaos + avg_sc) / 2.0) - 1.0)
+        
         for i, car in enumerate(state.cars):
             p_win = float(win_probs[i][1]) if len(win_probs[i]) > 1 else 0.0
             p_podium = float(podium_probs[i][1]) if len(podium_probs[i]) > 1 else 0.0
+            
+            # Apply heuristic flattening if chaos is increased by User Scenario
+            if env_variance > 0:
+                uniform_win = 1.0 / len(state.cars)
+                uniform_pod = 3.0 / len(state.cars)
+                blend = min(0.8, env_variance * 0.3) # Max 80% flattening
+                p_win = p_win * (1 - blend) + uniform_win * blend
+                p_podium = p_podium * (1 - blend) + uniform_pod * blend
+                
+            # Apply driver skill heuristic (since skill includes user aggression multipliers from compiler)
+            skill_bonus = max(0.5, car.driver_skill / 0.90)
+            p_win *= (skill_bonus ** 2)
+            p_podium *= skill_bonus
             
             win_prob_dict[car.identity.driver] = p_win
             podium_prob_dict[car.identity.driver] = p_podium

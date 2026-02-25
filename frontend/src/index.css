@@ -2468,3 +2468,205 @@ select,
 .timeline-event.green_flag {
   border-left-color: var(--green);
 }
+/* ========================================= */
+/* HOME PAGE (SPLIT SCREEN HERO)             */
+/* ========================================= */
+
+.home-container {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 2vw 4vw;
+    overflow: hidden;
+    position: relative;
+    background: radial-gradient(circle at 50% 120%, rgba(225, 6, 0, 0.05) 0%, transparent 60%);
+}
+
+.home-header {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    margin-bottom: 4vh;
+    z-index: 10;
+}
+
+.home-title-block {
+    display: flex;
+    flex-direction: column;
+}
+
+.home-main-title {
+    font-size: 3.5rem;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -2px;
+    background: linear-gradient(135deg, #fff 0%, #aaa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-transform: uppercase;
+}
+
+.home-subtitle {
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 4px;
+    color: var(--text-tertiary);
+}
+
+.hero-split {
+    display: flex;
+    flex: 1;
+    gap: 3vw;
+    align-items: stretch;
+    z-index: 10;
+}
+
+.hero-card {
+    flex: 1;
+    position: relative;
+    border-radius: 20px;
+    background: rgba(15, 18, 25, 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+.hero-card:hover {
+    transform: translateY(-8px) scale(1.02);
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+}
+
+.hero-card-content {
+    padding: 3vw;
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.5vh;
+}
+
+.hero-icon-wrapper {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    margin-bottom: 2vh;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.hero-card-title {
+    font-size: 2.5rem;
+    font-weight: 700;
+    letter-spacing: -1px;
+    color: white;
+}
+
+.hero-card-desc {
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    max-width: 80%;
+}
+
+.hero-card-footer {
+    margin-top: 2vh;
+    opacity: 0.7;
+    transition: opacity 0.3s;
+}
+
+.hero-card:hover .hero-card-footer {
+    opacity: 1;
+}
+
+.hero-action-text {
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+/* Specific Card Stylings */
+
+.card-predictions .hero-card-title {
+    background: linear-gradient(135deg, #00D2BE 0%, #1E41FF 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.card-predictions .hero-action-text {
+    color: #00D2BE;
+}
+
+.card-scenario .hero-card-title {
+    background: linear-gradient(135deg, #FF3B30 0%, #FF9500 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.card-scenario .hero-action-text {
+    color: #FF3B30;
+}
+
+/* Background elements */
+
+.cyber-grid {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image: 
+        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+    z-index: 0;
+    opacity: 0.5;
+    transform: perspective(500px) rotateX(40deg) scale(1.5) translateZ(-100px);
+    transform-origin: bottom center;
+}
+
+.glow-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.3;
+    z-index: 1;
+    transition: all 0.5s ease;
+}
+
+.blue-orb {
+    width: 300px;
+    height: 300px;
+    background: #00D2BE;
+    top: -50px;
+    right: -50px;
+}
+
+.card-predictions:hover .blue-orb {
+    opacity: 0.5;
+    transform: scale(1.2) translate(-20px, 20px);
+}
+
+.red-orb {
+    width: 350px;
+    height: 350px;
+    background: #FF3B30;
+    bottom: -100px;
+    right: -50px;
+}
+
+.card-scenario:hover .red-orb {
+    opacity: 0.5;
+    transform: scale(1.2) translate(-20px, -20px);
+}
+
