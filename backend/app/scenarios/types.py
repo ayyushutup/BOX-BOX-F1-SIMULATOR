@@ -23,6 +23,7 @@ class CarEngineeringConfig(BaseModel):
     brake_wear_rate: float = Field(ge=0.0, le=2.0, default=1.0)
     cooling_efficiency: float = Field(ge=0.0, le=2.0, default=1.0)
     fuel_consumption_multiplier: float = Field(ge=0.0, le=2.0, default=1.0)
+    tire_deg_multiplier: float = Field(ge=0.0, le=3.0, default=1.0)
 
 class DriverPersonalityConfig(BaseModel):
     driver_id: str = ""
@@ -74,11 +75,16 @@ class ChampionshipConfig(BaseModel):
     contract_pressure: float = 0.5
 
 class ChaosConfig(BaseModel):
-    mechanical_randomness: float = Field(ge=0.0, le=2.0, default=1.0)
-    incident_frequency: float = Field(ge=0.0, le=2.0, default=1.0)
-    safety_car_probability: float = Field(ge=0.0, le=2.0, default=1.0)
-    ai_irrationality: float = Field(ge=0.0, le=2.0, default=1.0)
-    weather_unpredictability: float = Field(ge=0.0, le=2.0, default=1.0)
+    mechanical_randomness: float = Field(ge=0.0, le=3.0, default=1.0)
+    incident_frequency: float = Field(ge=0.0, le=3.0, default=1.0)
+    safety_car_probability: float = Field(ge=0.0, le=3.0, default=1.0)
+    ai_irrationality: float = Field(ge=0.0, le=3.0, default=1.0)
+    weather_unpredictability: float = Field(ge=0.0, le=3.0, default=1.0)
+    field_compression: float = Field(ge=0.5, le=2.0, default=1.0)
+    reliability_variance: float = Field(ge=0.0, le=2.0, default=1.0)
+    qualifying_delta_override: float = Field(ge=-2.0, le=2.0, default=0.0)
+    driver_form_drift: bool = Field(default=False)
+    chaos_scaling: str = Field(default="linear")  # linear, exponential, clustered
 
 class ScenarioConfig(BaseModel):
     race_structure: RaceStructureConfig = Field(default_factory=RaceStructureConfig)

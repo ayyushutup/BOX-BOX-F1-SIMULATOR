@@ -2,7 +2,7 @@
 Maps FastF1 circuit identifiers to our synthetic Track objects.
 
 FastF1 uses CircuitShortName / CircuitKey, we need to match those
-to the 4 tracks we have in data.py.
+to the 24 tracks we have in data.py.
 """
 
 from ..data.tracks import TRACKS
@@ -13,11 +13,31 @@ _CIRCUIT_NAME_MAP = {
     # Exact matches from FastF1's CircuitShortName column
     "Monaco":       "monaco",
     "Monza":        "monza",
-    "Spa":          "spa",          # Spa-Francorchamps
+    "Spa":          "spa",
     "Silverstone":  "silverstone",
     "Suzuka":       "suzuka",
     "São Paulo":    "interlagos",
     "Austin":       "austin",
+    "Sakhir":       "bahrain",
+    "Bahrain":      "bahrain",
+    "Jeddah":       "jeddah",
+    "Melbourne":    "melbourne",
+    "Shanghai":     "shanghai",
+    "Miami":        "miami",
+    "Imola":        "imola",
+    "Montréal":     "montreal",
+    "Montreal":     "montreal",
+    "Barcelona":    "barcelona",
+    "Spielberg":    "spielberg",
+    "Budapest":     "budapest",
+    "Zandvoort":    "zandvoort",
+    "Baku":         "baku",
+    "Singapore":    "singapore",
+    "Mexico City":  "mexico",
+    "Las Vegas":    "vegas",
+    "Lusail":       "qatar",
+    "Yas Island":   "abu_dhabi",
+    "Yas Marina":   "abu_dhabi",
     # Common alternate names / lowercase variants
     "monaco":       "monaco",
     "monza":        "monza",
@@ -27,7 +47,38 @@ _CIRCUIT_NAME_MAP = {
     "interlagos":   "interlagos",
     "são paulo":    "interlagos",
     "austin":       "austin",
+    "bahrain":      "bahrain",
+    "sakhir":       "bahrain",
+    "jeddah":       "jeddah",
+    "melbourne":    "melbourne",
+    "shanghai":     "shanghai",
+    "miami":        "miami",
+    "imola":        "imola",
+    "montreal":     "montreal",
+    "montréal":     "montreal",
+    "barcelona":    "barcelona",
+    "spielberg":    "spielberg",
+    "budapest":     "budapest",
+    "zandvoort":    "zandvoort",
+    "baku":         "baku",
+    "singapore":    "singapore",
+    "mexico city":  "mexico",
+    "mexico":       "mexico",
+    "las vegas":    "vegas",
+    "vegas":        "vegas",
+    "lusail":       "qatar",
+    "qatar":        "qatar",
+    "yas island":   "abu_dhabi",
+    "yas marina":   "abu_dhabi",
+    "abu dhabi":    "abu_dhabi",
+    "abu_dhabi":    "abu_dhabi",
+    # Extended alternate names
     "Spa-Francorchamps": "spa",
+    "Albert Park":  "melbourne",
+    "Red Bull Ring": "spielberg",
+    "Hungaroring":  "budapest",
+    "Marina Bay":   "singapore",
+    "COTA":         "austin",
 }
 
 # The set of circuits we actually support

@@ -1,10 +1,16 @@
 """
-Monte Carlo Race Simulator
+Monte Carlo Race Simulator v2 — Anti-Determinism Engine
 
 Converts per-driver ML probabilities into simulation-driven
 win distributions by running N stochastic race outcome trials.
-This gives natural uncertainty, better probability realism,
-and more interpretable outcomes than raw classifier output.
+
+KEY CHANGES from v1:
+- Temperature softmax to compress dominance
+- Per-sim performance drift (form variance)
+- Non-linear shock events (heavy-tail incidents)
+- Driver mistake model (rare catastrophic events)
+- Exponential chaos scaling on Gumbel noise
+- Increased to 5000 simulations for better variance coverage
 """
 
 import numpy as np
@@ -13,7 +19,7 @@ from collections import Counter, defaultdict
 
 
 class MonteCarloRaceSimulator:
-    def __init__(self, n_simulations: int = 1000, seed: Optional[int] = None):
+    def __init__(self, n_simulations: int = 5000, seed: Optional[int] = None):
         self.n_simulations = n_simulations
         self.rng = np.random.default_rng(seed)
 
@@ -21,22 +27,29 @@ class MonteCarloRaceSimulator:
         self,
         win_probs: Dict[str, float],
         podium_probs: Optional[Dict[str, float]] = None,
-        n_simulations: Optional[int] = None
+        n_simulations: Optional[int] = None,
+        chaos_level: float = 1.0,        # 1.0 = neutral, higher = more chaos
+        incident_frequency: float = 1.0,  # multiplier for shock event probability
+        rl_signals: Optional[Dict[str, Dict]] = None,  # Per-driver RL behavioral signals
+        driver_form_drift: bool = False,  # P4: enable doubled form variance
+        chaos_scaling: str = "linear",    # P4: linear, exponential, clustered
     ) -> Dict:
         """
-        Run Monte Carlo simulations to estimate finishing order distributions.
+        Run Monte Carlo simulations with anti-determinism layers.
 
         Args:
             win_probs: {driver: probability_of_winning} from the ML model
-            podium_probs: {driver: probability_of_podium} — used to shape
-                          position distributions beyond P1
+            podium_probs: {driver: probability_of_podium}
             n_simulations: override default simulation count
+            chaos_level: controls Gumbel noise scaling and shock frequency
+            incident_frequency: multiplier for incident/DNF probability
 
         Returns:
             {
                 "mc_win_distribution": {driver: fraction_of_sims_won},
                 "predicted_order": [driver1, driver2, ...],
-                "position_distributions": {driver: {1: frac, 2: frac, ...}}
+                "position_distributions": {driver: {1: frac, 2: frac, ...}},
+                "volatility_bands": {driver: {optimistic: p10, pessimistic: p90}}
             }
         """
         n = n_simulations or self.n_simulations
@@ -47,46 +60,218 @@ class MonteCarloRaceSimulator:
             return {
                 "mc_win_distribution": {},
                 "predicted_order": [],
-                "position_distributions": {}
+                "position_distributions": {},
+                "volatility_bands": {}
             }
 
-        # Build a "strength" score for each driver that blends win + podium signals
-        # This gives us a richer probability landscape than win_prob alone
-        strengths = np.array([win_probs.get(d, 0.0) for d in drivers], dtype=np.float64)
+        # Build raw strength scores blending win + podium signals
+        raw_strengths = np.array([win_probs.get(d, 0.0) for d in drivers], dtype=np.float64)
 
         if podium_probs:
             podium_arr = np.array([podium_probs.get(d, 0.0) for d in drivers], dtype=np.float64)
-            # Blend: 60% win signal, 40% podium signal for overall strength
-            strengths = 0.6 * strengths + 0.4 * podium_arr
+            raw_strengths = 0.6 * raw_strengths + 0.4 * podium_arr
 
-        # Avoid zero probabilities — give everyone a small floor
-        strengths = np.maximum(strengths, 1e-4)
+        # Floor to prevent zeros
+        raw_strengths = np.maximum(raw_strengths, 1e-4)
+
+        # =========================================================
+        # LAYER 1: Temperature Softmax — compress dominance
+        # =========================================================
+        # Temperature > 1.0 flattens the distribution (more uncertainty)
+        # At T=2.0 (neutral), solid compression. At T=3.0+ (chaos), near-uniform.
+        temperature = 2.0 + (chaos_level - 1.0) * 0.8  # chaos=1 → T=2.0, chaos=3 → T=3.6
+        temperature = max(0.5, temperature)
+        
+        log_strengths = np.log(raw_strengths + 1e-10)
+        tempered = log_strengths / temperature
+        tempered -= tempered.max()  # numerical stability
+        exp_tempered = np.exp(tempered)
+        strengths = exp_tempered / exp_tempered.sum()  # softmax output
+        
+        # Internal probability cap: no driver > 45% after softmax
+        MAX_STRENGTH_CAP = 0.45
+        for idx in range(len(strengths)):
+            if strengths[idx] > MAX_STRENGTH_CAP:
+                excess = strengths[idx] - MAX_STRENGTH_CAP
+                strengths[idx] = MAX_STRENGTH_CAP
+                others_total = strengths.sum() - MAX_STRENGTH_CAP
+                if others_total > 0:
+                    for j in range(len(strengths)):
+                        if j != idx:
+                            strengths[j] += excess * (strengths[j] / others_total)
+        strengths = strengths / strengths.sum()  # renormalize
+
+        # =========================================================
+        # LAYER 5: Exponential Chaos Scaling on Gumbel noise
+        # =========================================================
+        # At chaos=1: noise_scale = 0.5 (moderate upset potential)
+        # At chaos=2: noise_scale = 1.35 (frequent upsets)
+        # At chaos=3: noise_scale = 3.7 (anything can happen)
+        base_noise_scale = 0.8
+        if chaos_scaling == "exponential":
+            noise_scale = base_noise_scale * np.exp((chaos_level - 1.0) * 1.5)  # steeper
+        elif chaos_scaling == "clustered":
+            # Clustered: bursts of high noise with calm stretches
+            noise_scale = base_noise_scale * (1.0 + (chaos_level - 1.0) * 0.5)  # lower base but bursts below
+        else:  # linear
+            noise_scale = base_noise_scale * np.exp((chaos_level - 1.0) * 1.0)
+
+        # Per-driver incident and mistake probabilities
+        # LAYER 3 & 4 parameters
+        base_incident_prob = 0.02 * incident_frequency  # 2% base DNF/incident per sim per driver
+        
+        # Build per-driver noise scales and mistake rates from RL signals
+        if rl_signals is None:
+            rl_signals = {}
+        
+        # Per-driver Gumbel noise scaling: erratic drivers (high time_variance) get more noise
+        driver_noise_scales = np.array([
+            noise_scale * (1.0 + rl_signals.get(d, {}).get('time_variance', 0.0) * 2.0)
+            for d in drivers
+        ])
+        
+        # Per-driver mistake probabilities from RL behavioral model
+        driver_mistake_probs = np.array([
+            rl_signals.get(d, {}).get('mistake_probability', 0.015)
+            for d in drivers
+        ])
 
         # Track results
         win_counts = Counter()
-        position_counts = defaultdict(lambda: Counter())  # driver -> {pos: count}
+        position_counts = defaultdict(lambda: Counter())
 
         for _ in range(n):
-            # Sample a finishing order using strengths as weights
-            # We sample without replacement to get a complete ordering
+            # =========================================================
+            # LAYER 2: Performance Drift — weekend form variance
+            # =========================================================
+            # Each sim represents a "possible weekend" where drivers have form variance
+            form_sigma = 0.24 if driver_form_drift else 0.12  # P4: doubled when drift enabled
+            form_drift_arr = self.rng.normal(0, form_sigma, size=n_drivers)
+            
+            # Team execution variance
+            team_drift = self.rng.normal(0, 0.06, size=n_drivers)
+            
+            # Clustered chaos: occasionally spike noise for this sim
+            chaos_burst = 1.0
+            if chaos_scaling == "clustered" and self.rng.random() < 0.20:
+                chaos_burst = 2.5  # 20% of sims get a chaos burst
+            
+            # Apply drift to strengths for this sim
+            sim_strengths = strengths * np.exp(form_drift_arr + team_drift)
+            sim_strengths = np.maximum(sim_strengths, 1e-6)
+
+            # =========================================================
+            # LAYER 2.5: Fatigue Drift — concentration loss over race
+            # =========================================================
+            # Simulates accumulated fatigue: some drivers lose more concentration
+            fatigue_vulnerability = self.rng.uniform(0.85, 1.0, size=n_drivers)
+            sim_strengths *= fatigue_vulnerability
+
+            # =========================================================
+            # LAYER 2.6: Nonlinear Tire Cliff
+            # =========================================================
+            # 5% chance per driver of hitting a sudden tire cliff
+            for j in range(n_drivers):
+                if self.rng.random() < 0.05:
+                    cliff_severity = self.rng.uniform(0.15, 0.40)
+                    sim_strengths[j] *= cliff_severity
+
+            # =========================================================
+            # LAYER 3: Shock Events — heavy-tail incidents
+            # =========================================================
+            for j in range(n_drivers):
+                if self.rng.random() < base_incident_prob:
+                    # Incident! Apply heavy-tail penalty (exponential distribution)
+                    # This can range from minor (0.3x strength) to catastrophic DNF (0.01x)
+                    shock_severity = self.rng.exponential(0.5)
+                    penalty = max(0.01, 1.0 - shock_severity)
+                    sim_strengths[j] *= penalty
+
+            # =========================================================
+            # LAYER 4: Driver Mistake Model — rare catastrophic errors
+            # =========================================================
+            for j in range(n_drivers):
+                # RL-informed mistake probability per driver, scaled by relative strength and chaos
+                relative_strength = raw_strengths[j] / raw_strengths.max()
+                mistake_prob = driver_mistake_probs[j] * (2.0 - relative_strength) * chaos_level
+                
+                if self.rng.random() < min(0.08, mistake_prob):
+                    # Catastrophic mistake: spin, crash, or major error
+                    sim_strengths[j] *= self.rng.uniform(0.01, 0.15)
+
+            # =========================================================
+            # LAYER 5.5: Strategy Execution Risk
+            # =========================================================
+            # Pit stop delay: 3% chance of slow pit per driver
+            for j in range(n_drivers):
+                if self.rng.random() < 0.03:
+                    pit_penalty = self.rng.uniform(0.60, 0.85)
+                    sim_strengths[j] *= pit_penalty
+            
+            # Cold tire penalty: 8% chance per driver of cold-tire struggle
+            for j in range(n_drivers):
+                if self.rng.random() < 0.08:
+                    cold_tire_penalty = self.rng.uniform(0.75, 0.90)
+                    sim_strengths[j] *= cold_tire_penalty
+
+            # =========================================================
+            # LAYER 5.6: Random Safety Car — field compression
+            # =========================================================
+            # 8% chance of a safety car bunching the field
+            if self.rng.random() < 0.08 * chaos_level:
+                # Compress strengths toward the mean (30% compression)
+                mean_strength = sim_strengths.mean()
+                sim_strengths = sim_strengths * 0.7 + mean_strength * 0.3
+
+            # =========================================================
+            # LAYER 6: Driver Interaction — Rivalry Response Dynamics
+            # =========================================================
+            # When a driver gets a big boost, nearby rivals respond with counter-boost
+            RIVALRY_PAIRS = {
+                ('VER', 'NOR'), ('NOR', 'VER'),
+                ('HAM', 'LEC'), ('LEC', 'HAM'),
+                ('SAI', 'NOR'), ('NOR', 'SAI'),
+                ('RUS', 'HAM'), ('HAM', 'RUS'),
+                ('ALO', 'VER'), ('VER', 'ALO'),
+                ('PIA', 'NOR'), ('NOR', 'PIA'),
+            }
+            
+            # Check each driver pair for interaction effects
+            for j in range(n_drivers):
+                d_j = drivers[j]
+                # If this driver's strength was boosted significantly in this sim
+                boost_ratio = sim_strengths[j] / max(strengths[j], 1e-6)
+                if boost_ratio > 1.15:  # >15% boost
+                    for k in range(n_drivers):
+                        if k == j:
+                            continue
+                        d_k = drivers[k]
+                        if (d_j, d_k) in RIVALRY_PAIRS:
+                            # 60% chance the rival responds with counter-boost
+                            if self.rng.random() < 0.60:
+                                response_boost = 1.0 + (boost_ratio - 1.0) * self.rng.uniform(0.3, 0.6)
+                                sim_strengths[k] *= response_boost
+
+            # Now sample finishing order using the modified strengths
+            # Apply chaos_burst to noise scales for clustered mode
+            sim_noise_scales = driver_noise_scales * chaos_burst
             remaining = list(range(n_drivers))
-            remaining_strengths = strengths.copy()
             order = []
 
             for pos in range(n_drivers):
-                # Normalize remaining strengths to probabilities
-                total = remaining_strengths[remaining].sum()
+                rem_strengths = sim_strengths[remaining]
+                total = rem_strengths.sum()
                 if total <= 0:
-                    # fallback: uniform
                     probs = np.ones(len(remaining)) / len(remaining)
                 else:
-                    probs = remaining_strengths[remaining] / total
+                    probs = rem_strengths / total
 
-                # Add some noise to make it stochastic (Gumbel trick for diversity)
-                # Without noise, high-prob drivers always win — unrealistic
-                noise = self.rng.gumbel(size=len(remaining)) * 0.3
+                # Gumbel trick with per-driver RL-informed noise scaling
+                remaining_arr = np.array(remaining)
+                per_driver_noise = sim_noise_scales[remaining_arr]
+                noise = self.rng.gumbel(size=len(remaining)) * per_driver_noise
                 noisy_scores = np.log(probs + 1e-10) + noise
-                
+
                 chosen_idx = np.argmax(noisy_scores)
                 chosen_driver_idx = remaining[chosen_idx]
                 order.append(chosen_driver_idx)
@@ -102,7 +287,7 @@ class MonteCarloRaceSimulator:
         # Compute distributions
         mc_win_dist = {d: win_counts[d] / n for d in drivers}
 
-        # Predicted order: sort by average position across simulations
+        # Predicted order: sort by average position
         avg_positions = {}
         for d in drivers:
             if position_counts[d]:
@@ -110,22 +295,59 @@ class MonteCarloRaceSimulator:
                 total_count = sum(position_counts[d].values())
                 avg_positions[d] = total_pos / total_count
             else:
-                avg_positions[d] = n_drivers  # worst case
+                avg_positions[d] = n_drivers
 
         predicted_order = sorted(drivers, key=lambda d: avg_positions[d])
 
-        # Position distributions (top 5 drivers only, to keep payload small)
-        top_drivers = predicted_order[:5]
+        # Position distributions + Volatility bands for ALL drivers (full P1-P20)
         pos_dists = {}
-        for d in top_drivers:
+        volatility_bands = {}
+        for d in drivers:  # All drivers, not just top 5
             pos_dists[d] = {
                 pos: round(count / n, 3)
                 for pos, count in sorted(position_counts[d].items())
-                if pos <= 5  # only show top-5 positions
+                # No position cap — show full P1-P20 range
             }
+
+            positions = []
+            for pos, count in position_counts[d].items():
+                positions.extend([pos] * count)
+            if positions:
+                p10 = int(np.percentile(positions, 10))
+                p90 = int(np.percentile(positions, 90))
+            else:
+                p10, p90 = n_drivers, n_drivers
+
+            volatility_bands[d] = {
+                "optimistic": p10,
+                "pessimistic": p90
+            }
+
+        # Build interaction matrix for top drivers
+        RIVALRY_MAP = {
+            'VER': ['NOR', 'ALO'],
+            'NOR': ['VER', 'SAI', 'PIA'],
+            'HAM': ['LEC', 'RUS'],
+            'LEC': ['HAM', 'SAI'],
+            'SAI': ['NOR', 'LEC'],
+            'RUS': ['HAM'],
+            'ALO': ['VER'],
+            'PIA': ['NOR'],
+        }
+        interaction_matrix = {}
+        for d in predicted_order[:10]:
+            rivals_in_field = [r for r in RIVALRY_MAP.get(d, []) if r in drivers]
+            if rivals_in_field:
+                interaction_matrix[d] = {
+                    "rivals": rivals_in_field,
+                    "response_probability": 0.60,
+                    "effect": "counter-boost"
+                }
 
         return {
             "mc_win_distribution": mc_win_dist,
             "predicted_order": predicted_order,
-            "position_distributions": pos_dists
+            "position_distributions": pos_dists,
+            "volatility_bands": volatility_bands,
+            "interaction_matrix": interaction_matrix
         }

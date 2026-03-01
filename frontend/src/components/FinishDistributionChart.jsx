@@ -32,13 +32,24 @@ const FinishDistributionChart = ({ predictions, baselinePredictions, selectedDri
     const dist = predictions?.position_distributions?.[selectedDriver] || {};
     const baseDist = baselinePredictions?.position_distributions?.[selectedDriver] || {};
 
-    // We want to graph P1 through P20 for a full curve, filling missing with 0
+    // We want to graph P1 through P20 for a full curve
     let modEV = 0;
     let baseEV = 0;
 
     let cumulativeProb = 0;
     let p25 = 1, p75 = 20;
     let found25 = false, found75 = false;
+
+    // Track mode (highest probability position)
+    let modePos = 1;
+    let modeProb = 0;
+
+    // Track median
+    let medianPos = 10;
+    let foundMedian = false;
+
+    const p10 = predictions?.volatility_bands?.[selectedDriver]?.optimistic;
+    const p90 = predictions?.volatility_bands?.[selectedDriver]?.pessimistic;
 
     for (let pos = 1; pos <= 20; pos++) {
         const modProb = dist[pos] || 0;
@@ -49,27 +60,29 @@ const FinishDistributionChart = ({ predictions, baselinePredictions, selectedDri
 
         cumulativeProb += modProb;
         if (!found25 && cumulativeProb >= 0.25) { p25 = pos; found25 = true; }
+        if (!foundMedian && cumulativeProb >= 0.50) { medianPos = pos; foundMedian = true; }
         if (!found75 && cumulativeProb >= 0.75) { p75 = pos; found75 = true; }
 
-        // We only plot non-zero neighborhoods to keep it clean, or just plot 1-10
-        if (pos <= 15) {
-            data.push({
-                position: `P${pos}`,
-                posNum: pos,
-                probability: Number((modProb * 100).toFixed(1)),
-                baselineProb: Number((baseProb * 100).toFixed(1))
-            });
-        }
+        // Track mode
+        if (modProb > modeProb) { modeProb = modProb; modePos = pos; }
+
+        // Full P1-P20 range — no cap
+        data.push({
+            position: `P${pos}`,
+            posNum: pos,
+            probability: Number((modProb * 100).toFixed(1)),
+            baselineProb: Number((baseProb * 100).toFixed(1))
+        });
     }
 
     // Fallback if no data
     if (modEV === 0 && baseEV === 0) {
-        for (let pos = 1; pos <= 10; pos++) {
+        for (let pos = 1; pos <= 20; pos++) {
             const distance = Math.abs(pos - 3);
             let prob = distance === 0 ? 35 : distance === 1 ? 20 : distance === 2 ? 8 : 1;
             data.push({ position: `P${pos}`, posNum: pos, probability: prob, baselineProb: prob - (Math.random() * 2) });
         }
-        modEV = 3.2; baseEV = 3.5;
+        modEV = 3.2; baseEV = 3.5; modePos = 3; medianPos = 3;
     }
 
     const isComparing = compareMode && baselinePredictions !== null;
@@ -122,8 +135,19 @@ const FinishDistributionChart = ({ predictions, baselinePredictions, selectedDri
                             </span>
                         )}
                         <span style={{ marginLeft: '12px' }}>
-                            Middle 50%: <span style={{ color: '#fff' }}>P{p25} - P{p75}</span>
+                            Median: <span style={{ color: '#fff' }}>P{medianPos}</span>
                         </span>
+                        <span style={{ marginLeft: '8px' }}>
+                            Mode: <span style={{ color: 'var(--green)' }}>P{modePos}</span>
+                        </span>
+                        <span style={{ marginLeft: '12px' }}>
+                            IQR: <span style={{ color: '#fff' }}>P{p25} - P{p75}</span>
+                        </span>
+                        {(p10 !== undefined && p90 !== undefined) && (
+                            <span style={{ marginLeft: '12px', color: 'var(--orange)' }}>
+                                80% CI: <span style={{ color: '#fff' }}>P{p10} - P{p90}</span>
+                            </span>
+                        )}
                     </div>
                 </div>
 
@@ -177,6 +201,15 @@ const FinishDistributionChart = ({ predictions, baselinePredictions, selectedDri
 
                         {/* Mid-50% Percentile Band Highlight */}
                         <ReferenceArea x1={`P${p25}`} x2={`P${p75}`} fill="rgba(255,255,255,0.03)" strokeOpacity={0} />
+                        {(p10 !== undefined && p90 !== undefined) && (
+                            <ReferenceArea x1={`P${p10}`} x2={`P${p90}`} fill="rgba(245, 128, 32, 0.05)" strokeOpacity={0} />
+                        )}
+
+                        {/* Median Line */}
+                        <ReferenceLine x={`P${medianPos}`} stroke="#FFD700" strokeDasharray="5 3" label={{ position: 'top', value: 'MED', fill: '#FFD700', fontSize: 9, fontWeight: 700 }} />
+
+                        {/* Mode Line */}
+                        <ReferenceLine x={`P${modePos}`} stroke="var(--green)" strokeDasharray="2 2" label={{ position: 'insideTopRight', value: 'MODE', fill: 'var(--green)', fontSize: 9, fontWeight: 700 }} />
 
                         {isComparing && (
                             <ReferenceLine x={`P${Math.round(baseEV)}`} stroke="#1C5B8A" strokeDasharray="3 3" label={{ position: 'top', value: 'Base EV', fill: '#1C5B8A', fontSize: 10 }} />
@@ -184,9 +217,9 @@ const FinishDistributionChart = ({ predictions, baselinePredictions, selectedDri
                         <ReferenceLine x={`P${Math.round(modEV)}`} stroke="#fff" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'EV', fill: '#fff', fontSize: 10 }} />
 
                         {isComparing && (
-                            <Area type="monotone" dataKey="baselineProb" stroke="#1C5B8A" strokeWidth={2} fillOpacity={1} fill="url(#colorBaseline)" />
+                            <Area type="monotone" dataKey="baselineProb" stroke="#1C5B8A" strokeWidth={2} fillOpacity={1} fill="url(#colorBaseline)" animationDuration={800} />
                         )}
-                        <Area type="monotone" dataKey="probability" stroke={TEAM_COLORS[selectedDriver] || 'var(--purple)'} strokeWidth={3} fillOpacity={1} fill="url(#colorModified)" />
+                        <Area type="monotone" dataKey="probability" stroke={TEAM_COLORS[selectedDriver] || 'var(--purple)'} strokeWidth={3} fillOpacity={1} fill="url(#colorModified)" animationDuration={800} />
                     </AreaChart>
                 </ResponsiveContainer>
             </div>

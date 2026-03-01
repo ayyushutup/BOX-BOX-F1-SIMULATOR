@@ -49,7 +49,7 @@ const PredictionPanel = ({ predictions, raceState }) => {
     }
 
     return (
-        <div className="panel prediction-panel">
+        <div className="panel prediction-panel" style={{ display: 'flex', flexDirection: 'column', maxHeight: '600px' }}>
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #2a2a2a', paddingBottom: '8px', marginBottom: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -84,7 +84,7 @@ const PredictionPanel = ({ predictions, raceState }) => {
             </div>
 
             {/* Content */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto', flex: 1, minHeight: 0, paddingRight: '4px' }}>
                 {!predictions ? (
                     <div style={{ color: '#555', fontSize: '0.75rem', textAlign: 'center', padding: '16px 0', position: 'relative', overflow: 'hidden' }}>
                         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: 'linear-gradient(90deg, transparent, rgba(0,200,255,0.4), transparent)', animation: 'scan 2s linear infinite' }} />
@@ -93,7 +93,7 @@ const PredictionPanel = ({ predictions, raceState }) => {
                 ) : (
                     <>
                         {/* Win Probability List — uses MC distribution when available */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: '#555', letterSpacing: '0.05em', marginBottom: '2px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: '#555', letterSpacing: '0.05em', marginBottom: '2px', flexShrink: 0 }}>
                             <span>DRIVER</span>
                             <span>{predictions.mc_win_distribution ? 'MC WIN PROBABILITY' : 'WIN PROBABILITY'}</span>
                         </div>

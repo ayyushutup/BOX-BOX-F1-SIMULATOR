@@ -96,7 +96,7 @@ def map_real_race_to_states(session) -> list[RaceState]:
         for _, row in lap_data.iterrows():
             driver_code = row['Driver']
             
-            # Skip drivers not in our roster (e.g. Bearman, Lawson if not added)
+            # Skip drivers not in our 2025 roster
             if driver_code not in KNOWN_DRIVERS:
                 continue
                 

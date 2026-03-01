@@ -7,7 +7,9 @@ import {
     CartesianGrid,
     Tooltip,
     ResponsiveContainer,
-    Cell
+    Cell,
+    ReferenceLine,
+    LabelList
 } from 'recharts'
 
 const TEAM_COLORS = {
@@ -41,21 +43,31 @@ const OutcomeDistribution = ({ predictions, baselinePredictions, raceState }) =>
             // Map car telemetry for hover drilldown
             const carContext = raceState?.cars?.find(c => c.driver === driver);
 
+            // Delta for compare mode visualization
+            const delta = Number(((modWin - baseWin) * 100).toFixed(1));
+
             return {
                 driver,
                 winProb: Number((modWin * 100).toFixed(1)),
                 baselineWin: Number((baseWin * 100).toFixed(1)),
                 podiumProb: Number((modPodium * 100).toFixed(1)),
                 baselinePodium: Number((basePodium * 100).toFixed(1)),
-                deltaWin: Number(((modWin - baseWin) * 100).toFixed(1)),
+                deltaWin: delta,
+                deltaBar: delta, // Separate field for the delta bar
                 tyreLife: carContext ? Math.round((1 - carContext.tire_wear) * 100) : '--',
                 pitStops: carContext?.pit_stops ?? 0,
-                interval: carContext?.interval ? `+${carContext.interval.toFixed(1)}s` : 'LEADER'
+                interval: carContext?.interval ? `+${carContext.interval.toFixed(1)}s` : 'LEADER',
+                causalFactors: predictions.causal_factors?.[driver] || []
             }
-        }).sort((a, b) => b.winProb - a.winProb).slice(0, 8); // Top 8
+        }).sort((a, b) => b.winProb - a.winProb).slice(0, 10); // Top 10
     }
 
     if (data.length === 0) return null;
+
+    // Get volatility bands for 95% CI display
+    const topDriver = data[0]?.driver;
+    const topBand = predictions?.volatility_bands?.[topDriver];
+    const ciText = topBand ? `P${topBand.optimistic} – P${topBand.pessimistic}` : null;
 
     const CustomTooltip = ({ active, payload, label }) => {
         if (active && payload && payload.length) {
@@ -90,18 +102,34 @@ const OutcomeDistribution = ({ predictions, baselinePredictions, raceState }) =>
                     {/* Causal Linkage / Context */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px dashed #333', paddingTop: '8px' }}>
                         <span style={{ fontSize: '0.65rem', color: 'var(--cyan)', letterSpacing: '1px' }}>CAUSAL CONTEXT</span>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ fontSize: '0.7rem', color: '#888' }}>Est. Tyre Life:</span>
-                            <span style={{ fontSize: '0.75rem', color: '#ccc' }}>{driverData.tyreLife}%</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ fontSize: '0.7rem', color: '#888' }}>Current Gap:</span>
-                            <span style={{ fontSize: '0.75rem', color: '#ccc' }}>{driverData.interval}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ fontSize: '0.7rem', color: '#888' }}>Pit Stops:</span>
-                            <span style={{ fontSize: '0.75rem', color: '#ccc' }}>{driverData.pitStops}</span>
-                        </div>
+                        {driverData.causalFactors && driverData.causalFactors.length > 0 ? (
+                            <ul style={{ margin: '4px 0 0 16px', padding: 0, color: '#ccc', fontSize: '0.75rem', listStyleType: 'disc' }}>
+                                {driverData.causalFactors.map((factor, idx) => (
+                                    <li key={idx} style={{
+                                        marginBottom: '3px',
+                                        color: factor.includes('Penalty') || factor.includes('Warning') ? 'var(--red)' :
+                                            factor.includes('Advantage') || factor.includes('Bonus') ? 'var(--green)' : '#ccc'
+                                    }}>
+                                        {factor}
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ fontSize: '0.7rem', color: '#888' }}>Est. Tyre Life:</span>
+                                    <span style={{ fontSize: '0.75rem', color: '#ccc' }}>{driverData.tyreLife}%</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ fontSize: '0.7rem', color: '#888' }}>Current Gap:</span>
+                                    <span style={{ fontSize: '0.75rem', color: '#ccc' }}>{driverData.interval}</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ fontSize: '0.7rem', color: '#888' }}>Pit Stops:</span>
+                                    <span style={{ fontSize: '0.75rem', color: '#ccc' }}>{driverData.pitStops}</span>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             )
@@ -109,7 +137,9 @@ const OutcomeDistribution = ({ predictions, baselinePredictions, raceState }) =>
         return null;
     }
 
-    const maxProb = data[0]?.winProb || 0;
+    // Auto-scale Y-axis based on actual data
+    const maxProb = Math.max(...data.map(d => Math.max(d.winProb, d.baselineWin || 0)));
+    const yMax = Math.min(100, Math.ceil((maxProb + 10) / 10) * 10); // Round up to nearest 10
     const isComparing = compareMode && baselinePredictions !== null;
 
     return (
@@ -119,7 +149,12 @@ const OutcomeDistribution = ({ predictions, baselinePredictions, raceState }) =>
                     <h2 className="panel-title" style={{ marginBottom: '4px', color: 'var(--cyan)' }}>FINAL OUTCOME DISTRIBUTION</h2>
                     <div className="text-xs" style={{ color: '#888' }}>
                         Expected Win: <span style={{ color: '#fff', fontWeight: 'bold' }}>{data[0]?.driver} ({data[0]?.winProb}%)</span> |
-                        Volatility Sensitivity: <span style={{ color: 'var(--orange)' }}>High</span>
+                        Volatility: <span style={{ color: 'var(--orange)' }}>{maxProb > 40 ? 'High' : maxProb > 25 ? 'Medium' : 'Low'}</span>
+                        {ciText && (
+                            <span style={{ marginLeft: '12px' }}>
+                                80% CI: <span style={{ color: '#fff' }}>{ciText}</span>
+                            </span>
+                        )}
                     </div>
                 </div>
 
@@ -158,16 +193,16 @@ const OutcomeDistribution = ({ predictions, baselinePredictions, raceState }) =>
                             tickFormatter={(val) => `${val}%`}
                             axisLine={false}
                             tickLine={false}
-                            domain={[0, 100]}
+                            domain={[0, yMax]}
                         />
                         <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
 
                         {isComparing ? (
                             <>
                                 {/* Blue for Baseline */}
-                                <Bar dataKey="baselineWin" name="BASELINE WIN" fill="#1C5B8A" radius={[2, 2, 0, 0]} />
+                                <Bar dataKey="baselineWin" name="BASELINE WIN" fill="#1C5B8A" radius={[2, 2, 0, 0]} animationDuration={800} />
                                 {/* Orange/Team for Modified */}
-                                <Bar dataKey="winProb" name="MODIFIED WIN" radius={[2, 2, 0, 0]}>
+                                <Bar dataKey="winProb" name="MODIFIED WIN" radius={[2, 2, 0, 0]} animationDuration={800}>
                                     {data.map((entry, index) => (
                                         <Cell key={`cell-${index}`} fill={'#F58020'} />
                                     ))}
@@ -175,8 +210,8 @@ const OutcomeDistribution = ({ predictions, baselinePredictions, raceState }) =>
                             </>
                         ) : (
                             <>
-                                <Bar dataKey="podiumProb" name="PODIUM PROBABILITY" fill="#444" radius={[4, 4, 0, 0]} barSize={40} />
-                                <Bar dataKey="winProb" name="WIN PROBABILITY" radius={[4, 4, 0, 0]} barSize={40}>
+                                <Bar dataKey="podiumProb" name="PODIUM PROBABILITY" fill="#444" radius={[4, 4, 0, 0]} barSize={40} animationDuration={800} />
+                                <Bar dataKey="winProb" name="WIN PROBABILITY" radius={[4, 4, 0, 0]} barSize={40} animationDuration={800}>
                                     {data.map((entry, index) => (
                                         <Cell key={`cell-${index}`} fill={TEAM_COLORS[entry.driver] || 'var(--red)'} />
                                     ))}

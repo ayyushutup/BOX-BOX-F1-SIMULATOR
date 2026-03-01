@@ -27,10 +27,29 @@ def train_models():
         "sc_active", "vsc_active", "drs_enabled"
     ]
     
-    # Encode categorical features
-    df['tire_compound_code'] = df['tire_compound'].astype('category').cat.codes
-    df['team_code'] = df['team'].astype('category').cat.codes
-    df['driver_code'] = df['driver'].astype('category').cat.codes
+    # Encode categorical features strictly using the 2025 Predictor maps
+    # This prevents misalignment if the training data contains older drivers 
+    # (e.g. 2024 drivers like Sargeant or Magnussen).
+    
+    driver_map = {d: i for i, d in enumerate(sorted([
+        "VER", "HAM", "LEC", "NOR", "RUS", "SAI", "ALO", "PIA",
+        "GAS", "ALB", "HUL", "OCO", "TSU", "LAW", "STR",
+        "ANT", "BEA", "DOO", "HAD", "BOR"
+    ]))}
+    
+    team_map = {t: i for i, t in enumerate(sorted([
+        "Red Bull Racing", "Mercedes", "Ferrari", "McLaren", "Aston Martin", 
+        "Alpine", "Williams", "Racing Bulls", "Haas", "Sauber"
+    ]))}
+    
+    tire_map = {t: i for i, t in enumerate(sorted([
+        "SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"
+    ]))}
+
+    # Map directly, filling uknowns with -1
+    df['tire_compound_code'] = df['tire_compound'].map(tire_map).fillna(-1).astype(int)
+    df['team_code'] = df['team'].map(team_map).fillna(-1).astype(int)
+    df['driver_code'] = df['driver'].map(driver_map).fillna(-1).astype(int)
     
     feature_cols.extend(['tire_compound_code', 'team_code', 'driver_code'])
     
