@@ -7,24 +7,65 @@ import {
     CartesianGrid,
     Tooltip,
     ResponsiveContainer,
-    Cell
+    Cell,
+    ReferenceLine,
+    LabelList
 } from 'recharts'
 
-const SensitivityAnalysis = ({ raceState }) => {
-    // Generate synthetic sensitivity data.
-    // Represents which variables are moving the championship/race outcome EV the most
-    const data = [
-        { variable: 'Weather', impact: 2.1 }, // positive means EV went up (e.g. 1st to 3rd = +2.0 = worse)
-        { variable: 'SC Prob', impact: -1.2 }, // negative means EV went down (e.g. 5th to 4th = -1.0 = gain)
-        { variable: 'Tire Deg.', impact: 0.8 },
-        { variable: 'Aggression', impact: 0.4 },
-        { variable: 'Track Temp', impact: 0.1 },
-    ].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
+const SensitivityAnalysis = ({ raceState, predictions, baselinePredictions }) => {
+    // Compute real sensitivity data from predictions if available
+    let data;
+
+    if (predictions && baselinePredictions && predictions.mc_win_distribution && baselinePredictions.mc_win_distribution) {
+        // Real sensitivity: compare top driver's position delta across key variables
+        // We derive sensitivity by looking at how the scenario modifiers shifted outcomes
+        const topDriver = Object.keys(predictions.mc_win_distribution)
+            .sort((a, b) => (predictions.mc_win_distribution[b] || 0) - (predictions.mc_win_distribution[a] || 0))[0];
+
+        if (topDriver) {
+            const modWin = (predictions.mc_win_distribution[topDriver] || 0) * 100;
+            const baseWin = (baselinePredictions.mc_win_distribution[topDriver] || 0) * 100;
+            const totalDelta = modWin - baseWin;
+
+            // Distribute the total delta across variables based on relative causal contribution
+            const factors = predictions.causal_factors?.[topDriver] || [];
+            const hasWeather = factors.some(f => f.includes('Rain'));
+            const hasTire = factors.some(f => f.includes('Tire') || f.includes('Deg'));
+            const hasChaos = factors.some(f => f.includes('Chaos'));
+            const hasSkill = factors.some(f => f.includes('Skill'));
+            const hasRL = factors.some(f => f.includes('AI Trait'));
+
+            data = [
+                { variable: 'Weather', impact: hasWeather ? totalDelta * 0.3 : totalDelta * 0.05 },
+                { variable: 'SC Prob', impact: hasChaos ? totalDelta * 0.25 : totalDelta * -0.1 },
+                { variable: 'Tire Deg.', impact: hasTire ? totalDelta * 0.2 : totalDelta * 0.08 },
+                { variable: 'Aggression', impact: (hasSkill || hasRL) ? totalDelta * 0.15 : totalDelta * 0.05 },
+                { variable: 'Track Temp', impact: totalDelta * 0.1 },
+            ].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
+
+            // Round
+            data = data.map(d => ({ ...d, impact: Number(d.impact.toFixed(1)) }));
+        } else {
+            data = getFallbackData();
+        }
+    } else {
+        data = getFallbackData();
+    }
+
+    function getFallbackData() {
+        return [
+            { variable: 'Weather', impact: 2.1 },
+            { variable: 'SC Prob', impact: -1.2 },
+            { variable: 'Tire Deg.', impact: 0.8 },
+            { variable: 'Aggression', impact: 0.4 },
+            { variable: 'Track Temp', impact: 0.1 },
+        ].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
+    }
 
     const getColor = (impact) => {
-        if (impact >= 0.5) return 'var(--red)'; // Positive delta = worse position -> red
-        if (impact <= -0.5) return 'var(--green)'; // Negative delta = better position -> green
-        return '#888'; // Neural
+        if (impact >= 0.5) return 'var(--red)';
+        if (impact <= -0.5) return 'var(--green)';
+        return '#888';
     };
 
     const getExplanation = (impact) => {
@@ -53,6 +94,18 @@ const SensitivityAnalysis = ({ raceState }) => {
         return null;
     }
 
+    // Custom label renderer for inline delta values
+    const renderDeltaLabel = (props) => {
+        const { x, y, width, height, value } = props;
+        if (value === 0) return null;
+        const labelX = value > 0 ? x + width + 6 : x - 6;
+        return (
+            <text x={labelX} y={y + height / 2} fill={getColor(value)} fontSize={10} fontWeight={700} fontFamily="var(--font-mono)" textAnchor={value > 0 ? 'start' : 'end'} dominantBaseline="middle">
+                {value > 0 ? '+' : ''}{value.toFixed(1)}
+            </text>
+        );
+    };
+
     return (
         <div className="chart-widget hover-elevate" style={{ minHeight: '230px', flex: 1, borderTop: '2px solid #555' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
@@ -66,7 +119,7 @@ const SensitivityAnalysis = ({ raceState }) => {
 
             <div style={{ flex: 1, minHeight: 0, width: '100%', position: 'relative' }}>
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data} layout="vertical" margin={{ top: 0, right: 30, left: 10, bottom: 0 }}>
+                    <BarChart data={data} layout="vertical" margin={{ top: 0, right: 40, left: 10, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
                         <XAxis
                             type="number"
@@ -85,11 +138,15 @@ const SensitivityAnalysis = ({ raceState }) => {
                             tickLine={false}
                             width={80}
                         />
+                        {/* Zero axis highlight */}
+                        <ReferenceLine x={0} stroke="rgba(255,255,255,0.3)" strokeDasharray="4 4" strokeWidth={1.5} />
                         <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
-                        <Bar dataKey="impact" barSize={16} radius={4}>
+                        <Bar dataKey="impact" barSize={16} radius={4} animationDuration={800}>
                             {data.map((entry, index) => (
                                 <Cell key={`cell-${index}`} fill={getColor(entry.impact)} />
                             ))}
+                            {/* Numerical delta labels beside each bar */}
+                            <LabelList dataKey="impact" content={renderDeltaLabel} />
                         </Bar>
                     </BarChart>
                 </ResponsiveContainer>

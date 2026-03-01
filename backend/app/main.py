@@ -80,7 +80,7 @@ def get_tracks():
 # =====================
 
 @app.post("/api/scenarios/predict")
-def predict_scenario_outcome(config: ScenarioConfig):
+def predict_scenario_outcome(config: ScenarioConfig, mode: str = "standard", intensity: str = "cinematic_high"):
     """
     Stateless endpoint that takes a custom parameter-driven ScenarioConfig,
     compiles it, and returns an instant Monte Carlo prediction distribution.
@@ -90,33 +90,75 @@ def predict_scenario_outcome(config: ScenarioConfig):
     
     # 2. Predict outcomes
     try:
-        predictions = ml_predictor.predict(state)
+        predictions = ml_predictor.predict(state, scenario_config=config)
         if not predictions:
             raise HTTPException(status_code=500, detail="ML Predictor failed to generate results.")
+        
+        # 3. Generate AI commentary
+        from app.ml.commentary import RaceCommentator
+        commentator = RaceCommentator()
+        
+        baseline_cars = [
+            {
+                "driver": c.identity.driver,
+                "team": c.identity.team,
+                "position": c.timing.position,
+                "gap_to_leader": c.timing.gap_to_leader,
+                "interval": c.timing.interval,
+                "tire_compound": c.telemetry.tire_state.compound.value,
+                "tire_wear": c.telemetry.tire_state.wear,
+                "tire_age": c.telemetry.tire_state.age,
+                "pit_stops": c.pit_stops,
+                "in_pit_lane": c.in_pit_lane,
+                "drs_active": c.systems.drs_active,
+                "driving_mode": c.strategy.driving_mode.value,
+                "best_lap_time": c.timing.best_lap_time,
+            }
+            for c in sorted(state.cars, key=lambda c: c.timing.position)
+        ]
+        
+        # Build scenario config dict for commentary
+        scenario_dict = {
+            "chaos": {
+                "safety_car_probability": config.chaos.safety_car_probability,
+                "incident_frequency": config.chaos.incident_frequency,
+            },
+            "weather": {
+                "timeline": [{"rain_probability": t.rain_probability, "temperature": t.temperature} for t in config.weather.timeline]
+            },
+            "engineering": {
+                "tire_deg_multiplier": config.engineering.tire_deg_multiplier,
+            }
+        }
+        
+        commentary = commentator.generate(
+            predictions, 
+            {
+                "cars": baseline_cars,
+                "meta": {"tick": state.meta.tick if hasattr(state, "meta") and hasattr(state.meta, "tick") else 0}
+            }, 
+            scenario_dict,
+            mode=mode,
+            intensity=intensity
+        )
+
+        # 4. Generate reasoning tree for expandable panel
+        reasoning_tree = commentator.generate_reasoning_tree(
+            predictions,
+            {
+                "cars": baseline_cars,
+                "meta": {"tick": state.meta.tick if hasattr(state, "meta") and hasattr(state.meta, "tick") else 0}
+            },
+            scenario_dict
+        )
             
         return {
             "scenario_id": "custom",
             "predictions": predictions,
+            "commentary": commentary,
+            "reasoning_tree": reasoning_tree,
             "baseline_state": {
-                                                                                # Return the baseline grid state so the frontend knows who is where
-                "cars": [
-                    {
-                        "driver": c.identity.driver,
-                        "team": c.identity.team,
-                        "position": c.timing.position,
-                        "gap_to_leader": c.timing.gap_to_leader,
-                        "interval": c.timing.interval,
-                        "tire_compound": c.telemetry.tire_state.compound.value,
-                        "tire_wear": c.telemetry.tire_state.wear,
-                        "tire_age": c.telemetry.tire_state.age,
-                        "pit_stops": c.pit_stops,
-                        "in_pit_lane": c.in_pit_lane,
-                        "drs_active": c.systems.drs_active,
-                        "driving_mode": c.strategy.driving_mode.value,
-                        "best_lap_time": c.timing.best_lap_time,
-                    }
-                    for c in sorted(state.cars, key=lambda c: c.timing.position)
-                ]
+                "cars": baseline_cars
             }
         }
     except Exception as e:

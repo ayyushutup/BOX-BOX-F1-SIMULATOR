@@ -9,13 +9,13 @@ const StrategyTree = ({ raceState }) => {
     ];
 
     return (
-        <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px', minHeight: '220px' }}>
+        <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px', minHeight: '220px', maxHeight: '350px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h2 className="panel-title" style={{ marginBottom: 0 }}>EXPECTED VALUE MATRIX</h2>
                 <div className="text-xs text-gray-500 font-mono">STRATEGY OPTIONS</div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, minHeight: 0, paddingRight: '4px' }}>
                 {decisions.map((decision, index) => (
                     <div
                         key={index}

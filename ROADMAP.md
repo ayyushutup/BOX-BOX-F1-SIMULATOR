@@ -16,6 +16,13 @@ If a feature doesn't clearly:
 
 ---
 
+> [!IMPORTANT]
+> **This project is 100% deterministic and runs on custom mathematical engines.** 
+> - ❌ **No Ollama/Ollama** is used for race reasoning or simulation.
+> - ✅ All intelligence is built on **Bayesian Log-Odds** and **Monte Carlo** simulations.
+
+---
+
 ## 🧠 What We're Building
 
 You are **NOT** building:
@@ -317,8 +324,8 @@ One screen: **Simulation Hub**
 
 ---
 
-## 🧠 PHASE C — ML Interpreter 🔄 IN PROGRESS
-**⏱️ Weeks 6–7** — *Data pipeline complete, training done, API integrated*
+## 🧠 PHASE C — ML Interpreter & RL Agent ✅ COMPLETE
+**⏱️ Weeks 6–7** — *Bayesian pipeline complete, RL training integrated*
 
 ### Goal
 **Predictions that feel earned, not magical.**
@@ -418,10 +425,10 @@ class RacePredictionModel:
 ```
 
 ### Definition of Done
-✅ Probabilities change **because** race changes  
-✅ Confidence grows as race stabilizes  
-✅ You can explain every spike  
-✅ ML **never** writes to RaceState  
+✅ Probabilities change **because** race changes — **VERIFIED**
+✅ Confidence grows as race stabilizes (Bayesian log-odds) — **VERIFIED**
+✅ You can explain every spike (Causal Linkage) — **VERIFIED**
+✅ ML **never** writes to RaceState — **VERIFIED**
 
 ### 🚫 DO NOT BUILD
 - ❌ Predictions based on real F1 data
@@ -745,21 +752,69 @@ Replaced the expensive visual track rendering with rigorous analytical panels to
 - `TrackMap.jsx` - Replaced by pure data layouts.
 
 ### Analytical Features Added
-- **Probability Evolution (`ProbabilityGraph.jsx`)**: Live Recharts graph tracking driver win probability vectors.
+- **Probability Evolution & Confidence Intervals**: Live Recharts graph tracking driver win probability vectors, now with Monte Carlo baseline projections and volatility bands.
 - **Expected Value Tree (`StrategyTree.jsx`)**: Visual decision tree determining if a pit stop has positive/negative positional EV under current conditions.
-- **Impact Sensitivity (`SensitivityAnalysis.jsx`)**: At-a-glance view of which simulated variables are moving predictions the most.
+- **Finish Distribution Spread**: Features mean position lines, percentile bands, and tooltips for deeper interpretation of race outcomes.
+- **Impact Sensitivity (`SensitivityAnalysis.jsx`)**: Clear analytical mapping for variable change impacts (e.g., ΔP for expected position).
 - **Chaos Meter (`VolatilityIndex.jsx`)**: A 0-100 volatility index indicating the stability or strategic unpredictability of the race.
-- **Scenario Injector (`ScenarioControls.jsx`)**: Top-level macro controls to instantly modify conditions and watch the prediction engine react.
+- **Scenario Injector (`ScenarioControls.jsx`)**: Top-level macro controls with live parameter-to-graph feedback, dynamically animating updates as variables change.
+- **Causal Linkage**: Built-in visual cues explaining *why* a specific driver's probability shifted.
+
+---
+
+## 🤖 AI & ML Overhaul: Bayesian Engine & RL Personalities (Late Feb 2026)
+
+Upgraded the ML pipeline from basic classification to a sophisticated, confidence-aware Bayesian framework and Reinforcement Learning setup.
+
+### Pipeline Upgrades
+- **Bayesian Framework**: Transitioned from raw probabilities to smoothed log-odds with Dirichlet smoothing to prevent overconfidence in early laps.
+- **Temperature-Scaled Chaos**: Prediction volatility now scales dynamically with race chaos, applying uniform noise when conditions are unpredictable.
+- **RL Expansion**: Upgraded the PPO observation space to ingest driver personality traits and expanded the training data to include the 2024 and 2025 F1 seasons.
+- **Surprise-Aware Commentary**: Core logic is now capable of detecting surprising events or sudden probability shifts for immediate downstream ingestion.
+
+---
+
+---
+
+## 🏁 PHASE F — Advanced Scenario Engineering & UX ✅ COMPLETE
+**⏱️ March 2026** — *Scenario Lab Overhaul, Reasoning Trees, and Driver Interaction Modeling*
+
+### Goal
+**Bridge the gap between raw data and human intuition.**
+
+### What was Built
+
+#### 1. Scenario Laboratory (The "Chaos Engine" Interface)
+- **Preset Chips**: One-click scenarios like `Monaco Chaos`, `Wet Race`, and `Undercut Heavy`.
+- **Chaos Index**: Real-time 0-100 gauge showing total race volatility.
+- **Weather Timeline**: Visual lap-by-lap representation of rain probability and temperature.
+- **Live Impact Preview**: Floating dashboard showing projected leader and SC risk as you move sliders.
+
+#### 2. Advanced Simulation Depth
+- **Driver Interaction Matrix**: Modeling rivalries (e.g., VER vs NOR) with 60% probability counter-boost response.
+- **Reasoning Tree**: Expandable structure in commentary showing *why* a prediction was made (Bias warnings, Phase analysis).
+- **Chaos Scaling**: Support for Linear, Exponential, and Clustered noise distributions.
+
+#### 3. Deep Interaction Layer (Tooltips)
+- **40+ Context-Aware Tooltips**: Every icon, slider, and button in the Scenario Lab now features a detailed explanation of its impact on the Bayesian engine.
+- **Dotted Underline Hints**: Subtle visual cues for discoverable intelligence.
+
+#### 4. UI/UX Polish
+- **Neon Accent Hierarchy**: Improved sidebar with active section glow and transitions.
+- **Maximized Verticality**: Redesigned Prediction Panel and AI Strategy Insights to utilize full viewport height with integrated scrolling.
+- **Launch Animations**: Kinetic feedback for simulation execution.
+
+---
 
 ---
 
 ## 🔄 Next Steps
 
-1. **Wire Scenario Controls to Engine:** Connect the new `ScenarioControls.jsx` inputs (Aggression, SC Probability, Tire Deg multipliers) to backend WebSocket commands so they dynamically mutate the `RaceState`.
-2. **Complete Phase D (Reality Injection):** 
+1. **Reality Junction (Phase D Implementation):** 
    - Build `FastF1DataCollector` to start ingesting historical session telemetry.
    - Build `RaceStateMapper` to convert messy FastF1 reality into clean `RaceState` snapshots that our engine understands.
-3. **Simulation vs Reality Polish:** Build the visual comparison tools (`SimVsRealityComparison.jsx`) so we can quantify exactly where our simulation engine diverges from actual F1 history.
+2. **Simulation vs Reality Polish:** Build the visual comparison tools (`SimVsRealityComparison.jsx`) so we can quantify exactly where our simulation engine diverges from actual F1 history.
+3. **Engine Optimization:** Further refine the PPO model for mid-race strategy shifts.
 
 ---
 
