@@ -145,24 +145,43 @@ class F1TelemetryEnv(gym.Env):
                                      high=np.array([1.0, 1.0, 1.0]), 
                                      dtype=np.float32)
         
-        # Observation Space: [Speed, X, Y, Heading, 5*LiDAR, 5*Personality Traits] = 14 dimensions
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(14,), dtype=np.float32)
+        # Observation Space: [Speed, X, Y, Heading, 5*LiDAR, 5*Personality, dirty_air, momentum, track_grip] = 17 dimensions
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(17,), dtype=np.float32)
         self.current_step = 0
+        
+        # Per-episode randomized v2 signals
+        self._dirty_air_factor = 0.0
+        self._momentum = 0.0
+        self._track_grip = 1.0
 
     def reset(self, seed=None):
         super().reset(seed=seed)
         self.expert_data = random.choice(self.datasets)
         self.max_steps = len(self.expert_data) - 1
         self.current_step = 0
+        
+        # Randomize v2 signals per episode
+        self._dirty_air_factor = random.random() * 0.8  # 0.0-0.8 range
+        self._momentum = random.uniform(-1.0, 1.0)
+        self._track_grip = 1.0  # starts at baseline, evolves
+        
         return self._get_obs(), {}
 
     def _get_obs(self):
         row = self.expert_data.iloc[self.current_step]
+        
+        # Track grip evolves over the lap
+        lap_progress = self.current_step / max(1, self.max_steps)
+        self._track_grip = min(1.15, 1.0 + lap_progress * 0.002 * 20)  # Simulate rubber buildup
+        
         return np.array([
             row['Speed'], row['X'], row['Y'], 0.0, 
             20.0, 20.0, 30.0, 20.0, 20.0, # Track boundaries / raycasts
             row['aggression'], row['consistency'], row['wet_skill'], 
-            row['tire_management'], row['risk_tolerance']
+            row['tire_management'], row['risk_tolerance'],
+            self._dirty_air_factor,  # v2: dirty air intensity
+            self._momentum,          # v2: driver momentum state
+            self._track_grip,        # v2: current track grip
         ], dtype=np.float32)
 
     def step(self, action):
@@ -175,6 +194,16 @@ class F1TelemetryEnv(gym.Env):
         brake_diff = abs(action[2] - expert_brake)
         
         reward = 10.0 - (throttle_diff * 5.0) - (brake_diff * 5.0)
+        
+        # v2: Penalize aggression in dirty air (patience in traffic)
+        if self._dirty_air_factor > 0.5:
+            aggression_penalty = action[1] * self._dirty_air_factor * 2.0
+            reward -= aggression_penalty
+        
+        # v2: Reward tire-friendly inputs when momentum is negative (tilting)
+        if self._momentum < -0.3:
+            if action[2] > 0.5:  # Heavy braking while tilting
+                reward -= 0.5
         
         self.current_step += 1
         terminated = self.current_step >= self.max_steps

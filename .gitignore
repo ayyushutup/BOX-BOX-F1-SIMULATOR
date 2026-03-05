@@ -32,3 +32,4 @@ backend/data/
 # Environment
 .env
 .env.local
+backend/.f1_cache/

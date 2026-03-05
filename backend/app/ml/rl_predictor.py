@@ -37,9 +37,11 @@ class RLDriverPredictor:
             print(f"Failed to load RL model: {e}")
             self.model = None
 
-    def predict_action(self, speed_kmh, x, y, heading, personality=None):
+    def predict_action(self, speed_kmh, x, y, heading, personality=None,
+                       dirty_air_factor=0.0, momentum=0.0, track_grip=1.0):
         """
         Takes current vehicle state and returns (steering, throttle, brake)
+        Supports both 14D (legacy) and 17D (v2) observation spaces.
         """
         if not self.model:
             return 0.0, 0.5, 0.0 # Default fallback: go straight slowly
@@ -47,19 +49,32 @@ class RLDriverPredictor:
         if personality is None:
             personality = {'aggression': 0.5, 'consistency': 0.5, 'wet_skill': 0.5, 'tire_management': 0.5, 'risk_tolerance': 0.5}
 
-        # Build observation array (same format as F1RaceEnv)
-        # obs = [speed_kmh, x, y, heading] + 5 LiDAR rays + 5 Personality Traits
-        # For simplicity, we mock the LiDAR rays here as 20.0
-        # In a full implementation, we would raycast against track boundaries
-        obs = np.array([
-            speed_kmh, x, y, heading, \
-            20.0, 20.0, 30.0, 20.0, 20.0, \
-            personality.get('aggression', 0.5), \
-            personality.get('consistency', 0.5), \
-            personality.get('wet_skill', 0.5), \
-            personality.get('tire_management', 0.5), \
+        # Detect model observation dimension for backward compatibility
+        try:
+            expected_obs_dim = self.model.observation_space.shape[0]
+        except Exception:
+            expected_obs_dim = 14  # legacy default
+        
+        # Build base observation (14D)
+        base_obs = [
+            speed_kmh, x, y, heading,
+            20.0, 20.0, 30.0, 20.0, 20.0,  # LiDAR rays
+            personality.get('aggression', 0.5),
+            personality.get('consistency', 0.5),
+            personality.get('wet_skill', 0.5),
+            personality.get('tire_management', 0.5),
             personality.get('risk_tolerance', 0.5)
-        ], dtype=np.float32)
+        ]
+        
+        # Add v2 signals if model supports 17D
+        if expected_obs_dim >= 17:
+            base_obs.extend([
+                float(dirty_air_factor),
+                float(momentum),
+                float(track_grip),
+            ])
+        
+        obs = np.array(base_obs, dtype=np.float32)
 
         try:
             action, _states = self.model.predict(obs, deterministic=True)
@@ -67,7 +82,7 @@ class RLDriverPredictor:
             return action[0], action[1], action[2]
         except ValueError as e:
             if "Unexpected observation shape" in str(e):
-                print(f"[RL Predictor] Warning: Model expects old geometry. Has train_rl.ipynb been run yet? Error: {e}")
+                print(f"[RL Predictor] Warning: Model expects old geometry. Error: {e}")
                 return 0.0, 0.5, 0.0 # fallback
             raise e
 
@@ -112,10 +127,24 @@ class RLDriverPredictor:
         max_steps = 2000 
         steps = 0
         
-        x, y, heading = 0.0, 0.0, 0.0 # Fictional generic setup since we're just testing the pedal behavior
+        x, y, heading = 0.0, 0.0, 0.0 # Fictional generic setup
+        
+        # v2 signals for the simulation
+        sim_dirty_air = 0.0  # Clean air for baseline simulation
+        sim_momentum = 0.0   # Neutral momentum
+        sim_track_grip = 1.0  # Start at baseline grip
         
         while distance_covered < track_length and steps < max_steps:
-            steering, throttle, brake = self.predict_action(current_speed_kmh, x, y, heading, personality)
+            # Track grip evolves over the lap
+            lap_progress = distance_covered / max(1.0, track_length)
+            sim_track_grip = min(1.15, 1.0 + lap_progress * 0.04)
+            
+            steering, throttle, brake = self.predict_action(
+                current_speed_kmh, x, y, heading, personality,
+                dirty_air_factor=sim_dirty_air,
+                momentum=sim_momentum,
+                track_grip=sim_track_grip,
+            )
             
             # Simple physics for speed change
             # Throttle adds speed, brake removes speed. Higher aggression = higher throttle impact, lower brake.

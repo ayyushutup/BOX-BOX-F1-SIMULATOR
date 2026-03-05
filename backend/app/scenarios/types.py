@@ -35,6 +35,8 @@ class DriverPersonalityConfig(BaseModel):
     wet_weather_skill: float = Field(ge=0.0, le=2.0, default=1.0)
     pressure_handling: float = Field(ge=0.0, le=2.0, default=1.0)
     radio_emotionality: float = Field(ge=0.0, le=2.0, default=1.0)
+    championship_position: int = Field(ge=0, default=0, description="Current championship standing")
+    championship_points: int = Field(ge=0, default=0, description="Current championship points")
 
 class GridCarConfig(BaseModel):
     driver: str
@@ -56,6 +58,8 @@ class RaceStructureConfig(BaseModel):
     fuel_limit_kg: float = 110.0
     track_grip_baseline: float = 1.0
     pit_lane_time_delta: float = 20.0
+    track_rubber_level: float = Field(ge=0.0, default=0.0, description="Starting rubber on track")
+    rubber_buildup_rate: float = Field(ge=0.0, default=0.002, description="Rubber buildup per lap")
 
 class WeatherTimelineEvent(BaseModel):
     start_lap: int

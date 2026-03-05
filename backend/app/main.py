@@ -11,7 +11,7 @@ from typing import Optional, Dict
 from .data.tracks import TRACKS
 from .scenarios.types import ScenarioConfig
 from .scenarios.compiler import compile_scenario
-from .api import ml, reality
+from .api import ml, reality, ws
 from .ml.predictor import RacePredictor
 
 app = FastAPI(
@@ -32,6 +32,7 @@ app.add_middleware(
 # REGISTER ROUTERS
 app.include_router(ml.router, prefix="/api/ml", tags=["Machine Learning"])
 app.include_router(reality.router, prefix="/api/reality", tags=["Reality Injection"])
+app.include_router(ws.router, tags=["WebSockets"])
 
 # Singleton predictor - loads models once at startup
 ml_predictor = RacePredictor()
@@ -117,17 +118,17 @@ def predict_scenario_outcome(config: ScenarioConfig, mode: str = "standard", int
             for c in sorted(state.cars, key=lambda c: c.timing.position)
         ]
         
-        # Build scenario config dict for commentary
+        config_dict = config.model_dump()
         scenario_dict = {
             "chaos": {
-                "safety_car_probability": config.chaos.safety_car_probability,
-                "incident_frequency": config.chaos.incident_frequency,
+                "safety_car_probability": config_dict.get("chaos", {}).get("safety_car_probability", 1.0),
+                "incident_frequency": config_dict.get("chaos", {}).get("incident_frequency", 1.0),
             },
             "weather": {
-                "timeline": [{"rain_probability": t.rain_probability, "temperature": t.temperature} for t in config.weather.timeline]
+                "timeline": [{"rain_probability": t.get("rain_probability", 0), "temperature": t.get("temperature", 25)} for t in config_dict.get("weather", {}).get("timeline", [])]
             },
             "engineering": {
-                "tire_deg_multiplier": config.engineering.tire_deg_multiplier,
+                "tire_deg_multiplier": config_dict.get("engineering", {}).get("tire_deg_multiplier", 1.0),
             }
         }
         

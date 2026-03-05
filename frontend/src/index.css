@@ -3312,7 +3312,7 @@ select,
   top: 0;
   left: 0;
   width: 100%;
-  height: 100%;
+  height: 95%;
   pointer-events: none;
   /* Crucial: Stop swallowing clicks meant for the left side text/buttons */
 }
@@ -3321,9 +3321,9 @@ select,
   position: absolute;
   left: 50%;
   /* Center it across the page */
-  top: 56%;
+  top: 65%;
   transform: translate(-50%, -50%);
-  width: 100vw;
+  width: 95vw;
   /* Make it massively cover the website */
   height: 95vh;
   max-width: none;
@@ -3332,8 +3332,10 @@ select,
   z-index: 5;
   filter: drop-shadow(0 30px 40px rgba(0, 0, 0, 0.9));
   transition: opacity 0.5s ease;
-  opacity: 0.8;
+  opacity: 1;
   /* Car slightly more prominent */
+  -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 95%, transparent 100%);
 }
 
 @keyframes floatCar {
@@ -3570,72 +3572,163 @@ select,
   position: relative;
   z-index: 10;
   background: #050608;
-  padding: 5vh 10vw 15vh 10vw;
+  padding: 10vh 10vw 15vh 10vw;
   margin-top: 0;
   display: flex;
   justify-content: center;
-  min-height: 100vh;
+  min-height: 110vh;
+  overflow: hidden;
+  /* Critical for bleed */
+}
+
+/* Cinematic Background Anchor */
+.explanation-visual-anchor {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 60vw;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.explanation-visual-anchor::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+
+  background-image: url('./assets/vintage_helmet.jpg');
+  background-size: 100%;
+  /* Slightly reduced for perfect framing */
+  background-position: 88% 75%;
+
+  /* Stronger presence + Depth separation */
+  filter:
+    contrast(125%) brightness(110%) saturate(1.08) drop-shadow(0 0 40px rgba(255, 255, 255, 0.08));
+
+  opacity: 1;
+  transition: background-size 1.2s ease;
+  transform-origin: bottom right;
+}
+
+.explanation-visual-anchor:hover::before {
+  background-size: 106%;
+  /* Subtle cinematic micro-zoom */
+}
+
+/* Cinematic Depth Mask */
+.explanation-visual-anchor::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+
+  background:
+    /* Left fade for text readability */
+    linear-gradient(to right,
+      #050608 28%,
+      rgba(5, 6, 8, 0.85) 45%,
+      rgba(5, 6, 8, 0.35) 65%,
+      transparent 85%),
+
+    /* Cinematic Rim Light / Edge Highlight */
+    radial-gradient(circle at 87% 40%,
+      rgba(255, 255, 255, 0.15) 0%,
+      rgba(255, 255, 255, 0.06) 25%,
+      transparent 55%),
+
+    /* Bottom grounding vignette */
+    linear-gradient(to top,
+      rgba(5, 6, 8, 0.6) 0%,
+      transparent 30%);
 }
 
 .explanation-content {
+  position: relative;
+  z-index: 2;
   width: 100%;
-  max-width: none;
+  max-width: 1400px;
   background: transparent;
-  backdrop-filter: none;
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  box-shadow: none;
   display: flex;
   flex-direction: column;
-  justify-content: center;
 }
 
 .explanation-title {
   font-family: var(--font-display);
-  font-size: 3.5rem;
+  font-size: 3.8rem;
   font-weight: 800;
-  margin-bottom: 3rem;
+  margin-bottom: 3.5rem;
   letter-spacing: 2px;
   display: flex;
   align-items: center;
   gap: 20px;
-  border-bottom: 2px solid rgba(255, 40, 0, 0.5);
-  /* Box Box Red Line */
+  border-bottom: 2px solid rgba(255, 40, 0, 0.6);
   padding-bottom: 1.5rem;
+  text-shadow: 0 0 30px rgba(255, 40, 0, 0.2);
 }
 
 .explanation-title .icon {
-  font-size: 3rem;
+  font-size: 3.2rem;
+  filter: drop-shadow(0 0 10px rgba(255, 40, 0, 0.4));
 }
 
 .explanation-lead {
-  font-size: 1.6rem;
+  font-size: 1.7rem;
   color: var(--text-primary);
-  margin-bottom: 4rem;
-  line-height: 1.6;
-  max-width: 1200px;
+  margin-bottom: 5rem;
+  line-height: 1.5;
+  max-width: 900px;
+  font-weight: 300;
+  text-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
 }
 
-.explanation-features {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 4rem 0;
+.explanation-features-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 4rem 6rem;
+  grid-template-columns: 1fr 1fr;
+  gap: 5rem 8rem;
+  margin-bottom: 4rem;
 }
 
-.explanation-features li {
+.column-left,
+.column-right {
+  display: flex;
+  flex-direction: column;
+  gap: 5rem;
+}
+
+.column-right {
+  /* Card styling removed for immersive look */
+  position: relative;
+}
+
+/* Cleanup of the previous attempt's pseudo elements */
+.column-right::before {
+  display: none;
+}
+
+.feature-item {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: flex-start;
   gap: 24px;
-  font-size: 1.15rem;
-  color: var(--text-secondary);
-  line-height: 1.7;
 }
 
-.explanation-features strong {
+.feature-text {
+  font-size: 1.15rem;
+  color: var(--text-primary);
+  line-height: 1.7;
+  /* Deepened shadow for "depth" and readability over background */
+  text-shadow:
+    2px 2px 4px rgba(0, 0, 0, 1),
+    -1px -1px 0 rgba(0, 0, 0, 0.8),
+    1px -1px 0 rgba(0, 0, 0, 0.8),
+    -1px 1px 0 rgba(0, 0, 0, 0.8),
+    1px 1px 0 rgba(0, 0, 0, 0.8),
+    0 0 20px rgba(0, 0, 0, 0.7);
+}
+
+.feature-text strong {
   color: #fff;
   font-weight: 700;
   font-size: 1.5rem;
@@ -3643,11 +3736,19 @@ select,
   margin-bottom: 10px;
   font-family: var(--font-display);
   letter-spacing: 1px;
+  /* Ultra depth for headers */
+  text-shadow:
+    0 0 10px var(--red-glow),
+    3px 3px 6px rgba(0, 0, 0, 1),
+    -1px -1px 0 rgba(0, 0, 0, 1),
+    1px -1px 0 rgba(0, 0, 0, 1),
+    -1px 1px 0 rgba(0, 0, 0, 1),
+    1px 1px 0 rgba(0, 0, 0, 1);
 }
 
 .feature-icon {
   font-size: 2.5rem;
-  margin-top: 0px;
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
   background: rgba(255, 255, 255, 0.03);
   padding: 18px;
   border-radius: 16px;
@@ -3667,4 +3768,126 @@ select,
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding-top: 3rem;
   margin-top: 2rem;
+}
+
+/* --- PRODUCTION-LEVEL UI EFFECTS --- */
+
+/* 1. Red Glow Typography */
+.hero-title-accent {
+  position: relative;
+  color: #ff2d2d;
+}
+
+.hero-title-accent::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  color: #ff2d2d;
+  filter: blur(8px);
+  opacity: 0.4;
+  z-index: -1;
+}
+
+/* 2. Telemetry Scan Lines Background */
+.telemetry-overlay {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(to bottom,
+      rgba(255, 255, 255, 0.02) 0px,
+      rgba(255, 255, 255, 0.02) 1px,
+      transparent 1px,
+      transparent 3px);
+  animation: scanMove 6s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes scanMove {
+  from {
+    transform: translateY(0);
+  }
+
+  to {
+    transform: translateY(100px);
+  }
+}
+
+/* 3. Button Glow Pulse */
+.primary-btn {
+  background: #111;
+  border: 1px solid #ff2d2d;
+  color: white;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 0 rgba(255, 45, 45, 0);
+  animation: pulse 3s infinite ease-in-out;
+}
+
+.primary-btn:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 10px rgba(255, 45, 45, 0.6),
+    0 0 25px rgba(255, 45, 45, 0.3);
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 6px rgba(255, 45, 45, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 16px rgba(255, 45, 45, 0.6);
+  }
+
+  100% {
+    box-shadow: 0 0 6px rgba(255, 45, 45, 0.3);
+  }
+}
+
+/* 4. Glass Tech Panels */
+.tech-card {
+  background: rgba(20, 20, 20, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 28px;
+  transition: all 0.3s ease;
+}
+
+.tech-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(255, 45, 45, 0.5);
+  box-shadow: 0 0 30px rgba(255, 45, 45, 0.2);
+}
+
+/* 5. Scroll Reveal */
+.reveal {
+  opacity: 0;
+  transform: translateY(40px);
+  transition: all 0.6s ease;
+}
+
+.reveal.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 6. Dynamic Red Underline */
+.heading-underline {
+  position: relative;
+  display: inline-block;
+  /* Ensure width is based on content */
+}
+
+.heading-underline::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -6px;
+  height: 2px;
+  width: 0;
+  background: #ff2d2d;
+  transition: width 0.5s ease;
+}
+
+.heading-underline:hover::after {
+  width: 100%;
 }
