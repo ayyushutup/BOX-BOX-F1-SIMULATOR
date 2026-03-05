@@ -8,7 +8,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Starting Backend..."
-cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
+cd backend && /Library/Frameworks/Python.framework/Versions/3.14/bin/python3.14 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
 echo "Starting Frontend..."

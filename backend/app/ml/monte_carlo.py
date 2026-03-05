@@ -1,18 +1,18 @@
 """
-Monte Carlo Race Simulator v2 — Anti-Determinism Engine
+Monte Carlo Race Simulator v3 — Race Intelligence Engine
 
 Converts per-driver ML probabilities into simulation-driven
 win distributions by running N stochastic race outcome trials.
 
-KEY CHANGES from v1:
-- Temperature softmax to compress dominance
-- Per-sim performance drift (form variance)
-- Non-linear shock events (heavy-tail incidents)
-- Driver mistake model (rare catastrophic events)
-- Exponential chaos scaling on Gumbel noise
-- Increased to 5000 simulations for better variance coverage
+v3 CHANGES:
+- Incident-driven Safety Car / VSC replacing flat probability
+- Dynamic rivalry calculation from championship points gap
+- DRS train cluster simulation
+- Enhanced dirty air integration
+- Championship pressure on mistake rates
 """
 
+import math
 import numpy as np
 from typing import Dict, List, Optional
 from collections import Counter, defaultdict
@@ -33,6 +33,8 @@ class MonteCarloRaceSimulator:
         rl_signals: Optional[Dict[str, Dict]] = None,  # Per-driver RL behavioral signals
         driver_form_drift: bool = False,  # P4: enable doubled form variance
         chaos_scaling: str = "linear",    # P4: linear, exponential, clustered
+        championship_data: Optional[Dict[str, Dict]] = None,  # {driver: {position, points}}
+        track_sc_probability: float = 0.2,  # Base SC probability for this track
     ) -> Dict:
         """
         Run Monte Carlo simulations with anti-determinism layers.
@@ -215,42 +217,96 @@ class MonteCarloRaceSimulator:
                     sim_strengths[j] *= cold_tire_penalty
 
             # =========================================================
-            # LAYER 5.6: Random Safety Car — field compression
+            # LAYER 5.6: Incident-Driven Safety Car / VSC (v3)
             # =========================================================
-            # 8% chance of a safety car bunching the field
-            if self.rng.random() < 0.08 * chaos_level:
-                # Compress strengths toward the mean (30% compression)
-                mean_strength = sim_strengths.mean()
-                sim_strengths = sim_strengths * 0.7 + mean_strength * 0.3
+            # Instead of flat 8%, SC probability is derived from:
+            # 1. Track chaos level
+            # 2. Whether any drivers had incidents in this sim
+            sc_triggered = False
+            vsc_triggered = False
+            incident_count = sum(1 for j in range(n_drivers) 
+                                if sim_strengths[j] / max(strengths[j], 1e-6) < 0.3)  # severe incidents
+            
+            # Base probability + incident-driven boost
+            sc_prob = track_sc_probability * chaos_level * 0.15  # ~3% base at neutral
+            if incident_count > 0:
+                sc_prob += 0.40 * incident_count  # 40% per incident
+            
+            if self.rng.random() < min(0.60, sc_prob):  # Cap at 60%
+                if self.rng.random() < 0.30:
+                    # VSC (30% of triggered) — lighter compression
+                    vsc_triggered = True
+                    mean_strength = sim_strengths.mean()
+                    sim_strengths = sim_strengths * 0.60 + mean_strength * 0.40
+                else:
+                    # Full Safety Car — heavy compression
+                    sc_triggered = True
+                    mean_strength = sim_strengths.mean()
+                    sim_strengths = sim_strengths * 0.30 + mean_strength * 0.70
 
             # =========================================================
-            # LAYER 6: Driver Interaction — Rivalry Response Dynamics
+            # LAYER 5.7: DRS Train Cluster Penalty (v3)
             # =========================================================
-            # When a driver gets a big boost, nearby rivals respond with counter-boost
-            RIVALRY_PAIRS = {
-                ('VER', 'NOR'), ('NOR', 'VER'),
-                ('HAM', 'LEC'), ('LEC', 'HAM'),
-                ('SAI', 'NOR'), ('NOR', 'SAI'),
-                ('RUS', 'HAM'), ('HAM', 'RUS'),
-                ('ALO', 'VER'), ('VER', 'ALO'),
-                ('PIA', 'NOR'), ('NOR', 'PIA'),
-            }
-            
-            # Check each driver pair for interaction effects
-            for j in range(n_drivers):
-                d_j = drivers[j]
-                # If this driver's strength was boosted significantly in this sim
-                boost_ratio = sim_strengths[j] / max(strengths[j], 1e-6)
-                if boost_ratio > 1.15:  # >15% boost
-                    for k in range(n_drivers):
-                        if k == j:
-                            continue
-                        d_k = drivers[k]
-                        if (d_j, d_k) in RIVALRY_PAIRS:
-                            # 60% chance the rival responds with counter-boost
-                            if self.rng.random() < 0.60:
+            # Simulate drivers stuck in traffic getting penalized
+            # Sort by current sim strength, apply dirty air cascade
+            strength_order = np.argsort(-sim_strengths)
+            for rank in range(1, n_drivers):
+                idx = strength_order[rank]
+                leader_idx = strength_order[rank - 1]
+                # If close in strength (within 15%), dirty air penalty
+                ratio = sim_strengths[idx] / max(sim_strengths[leader_idx], 1e-6)
+                if ratio > 0.85:
+                    # In dirty air — 0.97x penalty
+                    sim_strengths[idx] *= 0.97
+
+            # =========================================================
+            # LAYER 6: Driver Interaction — Dynamic Rivalry (v3)
+            # =========================================================
+            # Dynamic rivalry strength from championship points gap
+            if championship_data:
+                for j in range(n_drivers):
+                    d_j = drivers[j]
+                    d_j_data = championship_data.get(d_j, {})
+                    d_j_pts = d_j_data.get('points', 0)
+                    
+                    boost_ratio = sim_strengths[j] / max(strengths[j], 1e-6)
+                    if boost_ratio > 1.15:  # >15% boost
+                        for k in range(n_drivers):
+                            if k == j:
+                                continue
+                            d_k = drivers[k]
+                            d_k_data = championship_data.get(d_k, {})
+                            d_k_pts = d_k_data.get('points', 0)
+                            
+                            # Dynamic rivalry: closer points = stronger response
+                            pts_gap = abs(d_j_pts - d_k_pts)
+                            rivalry_strength = math.exp(-pts_gap / 20.0) if pts_gap > 0 else 0.8
+                            
+                            if rivalry_strength > 0.3 and self.rng.random() < rivalry_strength:
                                 response_boost = 1.0 + (boost_ratio - 1.0) * self.rng.uniform(0.3, 0.6)
                                 sim_strengths[k] *= response_boost
+            else:
+                # Fallback: hardcoded rivalry pairs (legacy behavior)
+                RIVALRY_PAIRS = {
+                    ('VER', 'NOR'), ('NOR', 'VER'),
+                    ('HAM', 'LEC'), ('LEC', 'HAM'),
+                    ('SAI', 'NOR'), ('NOR', 'SAI'),
+                    ('RUS', 'HAM'), ('HAM', 'RUS'),
+                    ('ALO', 'VER'), ('VER', 'ALO'),
+                    ('PIA', 'NOR'), ('NOR', 'PIA'),
+                }
+                for j in range(n_drivers):
+                    d_j = drivers[j]
+                    boost_ratio = sim_strengths[j] / max(strengths[j], 1e-6)
+                    if boost_ratio > 1.15:
+                        for k in range(n_drivers):
+                            if k == j:
+                                continue
+                            d_k = drivers[k]
+                            if (d_j, d_k) in RIVALRY_PAIRS:
+                                if self.rng.random() < 0.60:
+                                    response_boost = 1.0 + (boost_ratio - 1.0) * self.rng.uniform(0.3, 0.6)
+                                    sim_strengths[k] *= response_boost
 
             # Now sample finishing order using the modified strengths
             # Apply chaos_burst to noise scales for clustered mode

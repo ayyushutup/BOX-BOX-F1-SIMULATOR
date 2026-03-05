@@ -819,3 +819,16 @@ Upgraded the ML pipeline from basic classification to a sophisticated, confidenc
 ---
 
 > **Remember:** You're building a **race-reasoning engine**, not a dashboard. Every decision should serve RaceState correctness first.
+
+---
+
+## 🏎️ Upcoming AI Integrations & Roadmap Enhancements
+
+### Phase G — Advanced Strategic Logic & Track Dynamics
+
+1.  **Positional Explicit EV Framework**: Rebuilding the binary `PitStrategyPredictor` into a more fluid model prioritizing undercut vs overcut based on clean air. The objective is to define a "stratergic pit window" UI variable.
+2. **Exponential Driver State Tracking Momentum Math Model**: Enhancing real-time predictive values and driver performance based on the specific success and failure on track (Confidence / Frustration limits) over short lap bursts rather than static per-race variables. This impacts RL actions dramatically.
+3.  **Advanced Weather and Grip Multipliers System**: Integrating a complex "Green Track" effect to reflect track friction and rubber buildup, introducing exponential tire decay parameters in dirty conditions, or after heavy track washing (e.g. following rain), causing slower overall predictions. Interlocking this with exact mm water measurements (rain).
+4.  **Air Density and Rivalry Expansion**: Punishing trailing drivers heavily using calculated aero wake (`dirty_air`). If close trailing persists, the new system forces `RL_predict` variables down (more mistakes). And we are shifting `RIVALRY_MAP` out of core rules, and directly deriving inter-driver responses relative to current championship dynamics.
+5. **Team Advisory Data Interconnect**: Opening a lightweight bridge designed to feed compiled event structures to LLM instances safely to form precise radio broadcasts ('Team Principal' summaries)
+

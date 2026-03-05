@@ -113,6 +113,9 @@ class CarSystems(BaseModel):
 class CarStrategy(BaseModel):
     driving_mode: DrivingMode = Field(default=DrivingMode.BALANCED)
     active_command: str | None = Field(default=None)
+    pit_window_open: bool = Field(default=False, description="Is it advantageous to pit right now?")
+    undercut_viable: bool = Field(default=False, description="Can we execute an undercut on the car ahead?")
+    target_undercut_delta: float | None = Field(default=None, description="Time delta to close for a successful undercut")
 
 class CarTiming(BaseModel):
     position: int = Field(ge=1, le=22)
@@ -136,8 +139,15 @@ class Car(BaseModel):
     driver_skill: float = Field(ge=0.0, le=1.0, default=0.90)
     personality: dict = Field(default_factory=dict, description="Driver personality traits")
     in_pit_lane: bool = Field(default=False)
-    pit_lane_progress: float = Field(ge=0.0, le=1.0, default=0.0)    
+    pit_lane_progress: float = Field(ge=0.0, le=1.0, default=0.0)
+    momentum: float = Field(default=0.0, ge=-1.0, le=1.0, description="Driver momentum: -1=tilting, +1=on fire")
     
+class TrackEvolution(BaseModel):
+    """Track surface evolution state — rubber buildup and grip changes"""
+    rubber_level: float = Field(default=0.0, ge=0.0, description="Accumulated rubber on racing line")
+    grip_level: float = Field(default=1.0, ge=0.8, le=1.15, description="Effective grip multiplier")
+    rubber_buildup_rate: float = Field(default=0.002, ge=0.0, description="Rubber per lap per car")
+
 class Track(BaseModel):
     """describes the Circuit where the race is happening"""
     id: str = Field(description="Unique identifier for the track")
@@ -164,6 +174,9 @@ class Track(BaseModel):
     
     # RL Geometry
     boundary: TrackBoundary | None = Field(default=None, description="2D track layout for RL")
+    
+    # Track evolution state
+    track_evolution: TrackEvolution = Field(default_factory=TrackEvolution, description="Surface grip evolution")
 
 class RaceControl(str, Enum):
     """Mutually exclusive race control states"""

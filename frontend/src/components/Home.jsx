@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import car1 from '../assets/cars/car_1.png';
-import car2 from '../assets/cars/car_2.png';
-import car3 from '../assets/cars/car_3.png';
-import car4 from '../assets/cars/car_4.png';
-import car5 from '../assets/cars/car_5.png';
-import car6 from '../assets/cars/car_6.png';
+import car1 from '../assets/cars/ferrari_new.png';
+import car2 from '../assets/cars/mclaren_new.png';
+import car3 from '../assets/cars/mercedes_new.png';
+import car4 from '../assets/cars/alpine_new.png';
+import car5 from '../assets/cars/williams_new.png';
+import car6 from '../assets/cars/redbull_new.png';
+import car7 from '../assets/cars/audi_new.png';
+import car8 from '../assets/cars/vcarb_new.png';
+import helmetBg from '../assets/vintage_helmet.jpg';
 
 const TEAMS = [
     {
@@ -90,6 +93,34 @@ const TEAMS = [
             safetyCarProb: '10%',
             lapTimeProjection: `1'21.6`
         }
+    },
+    {
+        id: 'audi',
+        name: 'Audi',
+        color: '#F50537', // Audi Sport Red
+        carImage: car7,
+        stats: {
+            winProb: '2.1%',
+            podiumChance: '8.5%',
+            aggression: 'BALANCED',
+            chaosIndex: '0.82',
+            safetyCarProb: '15%',
+            lapTimeProjection: `1'23.2`
+        }
+    },
+    {
+        id: 'vcarb',
+        name: 'VCARB',
+        color: '#1638f8', // VCARB Blue
+        carImage: car8,
+        stats: {
+            winProb: '1.2%',
+            podiumChance: '5.0%',
+            aggression: 'HIGH',
+            chaosIndex: '0.75',
+            safetyCarProb: '14%',
+            lapTimeProjection: `1'23.6`
+        }
     }
 ];
 
@@ -108,6 +139,24 @@ const Home = ({ onNavigate }) => {
         }
         return () => clearInterval(interval);
     }, [autoPlay]);
+
+    // Scroll Reveal Effect
+    useEffect(() => {
+        const reveals = document.querySelectorAll('.reveal');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('active');
+                }
+            });
+        }, { threshold: 0.2 });
+
+        reveals.forEach(r => observer.observe(r));
+
+        return () => {
+            reveals.forEach(r => observer.unobserve(r));
+        };
+    }, []);
 
     const activeTeam = TEAMS[activeTeamIndex];
 
@@ -134,12 +183,14 @@ const Home = ({ onNavigate }) => {
 
             {/* Hero Section */}
             <div className="hero-cinematic">
+                <div className="telemetry-overlay"></div>
+
                 {/* Left Content */}
                 <div className="hero-content">
                     <h1 className="hero-massive-title">
                         <span>SIMULATE</span>
                         <span>THE</span>
-                        <span className="accent-text">UNPREDICTABLE</span>
+                        <span className="accent-text hero-title-accent" data-text="UNPREDICTABLE">UNPREDICTABLE</span>
                     </h1>
                     <p className="hero-description">
                         AI-powered 2026 Formula 1 race prediction engine.<br />
@@ -147,7 +198,7 @@ const Home = ({ onNavigate }) => {
                     </p>
                     <div className="hero-actions">
                         <button
-                            className="btn-primary-action"
+                            className="btn-primary-action primary-btn"
                             onClick={() => onNavigate('scenarios')}
                         >
                             [ LAUNCH SIMULATION ]
@@ -170,8 +221,11 @@ const Home = ({ onNavigate }) => {
 
             {/* WHAT IS BOX BOX? - Explanation Section (Below Fold) */}
             <div className="platform-explanation">
+                {/* Cinematic Background Visual Anchor */}
+                <div className="explanation-visual-anchor"></div>
+
                 <div className="explanation-content">
-                    <h2 className="explanation-title">
+                    <h2 className="explanation-title heading-underline">
                         <span className="icon">🔬</span> WHAT IS BOX BOX?
                     </h2>
 
@@ -179,36 +233,41 @@ const Home = ({ onNavigate }) => {
                         Box Box is a custom-built Formula 1 simulation engine that:
                     </p>
 
-                    <ul className="explanation-features">
-                        <li>
-                            <div className="feature-icon">⚡</div>
-                            <div className="feature-text">
-                                <strong>Stochastic Monte Carlo Engine</strong>
-                                By continuously running 100,000+ probabilistic race simulations per second, the engine maps out every possible timeline. It calculates real-time win probabilities, podium chances, and position distributions by dynamically modeling lap times, tire degradation curves, and individual driver consistencies instead of relying on static averages.
+                    <div className="explanation-features-grid">
+                        <div className="column-left reveal">
+                            <div className="feature-item tech-card">
+                                <div className="feature-icon">⚡</div>
+                                <div className="feature-text">
+                                    <strong>Stochastic Monte Carlo Engine</strong>
+                                    By continuously running 100,000+ probabilistic race simulations per second, the engine maps out every possible timeline. It calculates real-time win probabilities, podium chances, and position distributions by dynamically modeling lap times, tire degradation curves, and individual driver consistencies instead of relying on static averages.
+                                </div>
                             </div>
-                        </li>
-                        <li>
-                            <div className="feature-icon">🧠</div>
-                            <div className="feature-text">
-                                <strong>Reinforcement Learning Strategy Agents</strong>
-                                Instead of hard-coded heuristics, Box Box utilizes active Reinforcement Learning (PPO) models to predict intelligent pit strategies. Each AI agent acts autonomously during the race, optimizing tire choices and push/save pacing based on unique driver personalities—weighing overtakes against tire preservation and risk tolerance.
+                            <div className="feature-item tech-card">
+                                <div className="feature-icon">🌦</div>
+                                <div className="feature-text">
+                                    <strong>Dynamic Chaos & Volatility Modeling</strong>
+                                    Racing isn't conducted in a vacuum. The engine actively models dynamic race chaos, injecting unpredictable variables like sudden Safety Cars, flash rain storms, and abrupt tire degradation cliffs. Our volatility index measures how mathematically sensitive current standings are to these chaotic events triggering.
+                                </div>
                             </div>
-                        </li>
-                        <li>
-                            <div className="feature-icon">🌦</div>
-                            <div className="feature-text">
-                                <strong>Dynamic Chaos & Volatility Modeling</strong>
-                                Racing isn't conducted in a vacuum. The engine actively models dynamic race chaos, injecting unpredictable variables like sudden Safety Cars, flash rain storms, and abrupt tire degradation cliffs. Our volatility index measures how mathematically sensitive current standings are to these chaotic events triggering.
+                        </div>
+
+                        <div className="column-right reveal">
+                            <div className="feature-item tech-card">
+                                <div className="feature-icon">🧠</div>
+                                <div className="feature-text">
+                                    <strong>Reinforcement Learning Strategy Agents</strong>
+                                    Instead of hard-coded heuristics, Box Box utilizes active Reinforcement Learning (PPO) models to predict intelligent pit strategies. Each AI agent acts autonomously during the race, optimizing tire choices and push/save pacing based on unique driver personalities—weighing overtakes against tire preservation and risk tolerance.
+                                </div>
                             </div>
-                        </li>
-                        <li>
-                            <div className="feature-icon">📊</div>
-                            <div className="feature-text">
-                                <strong>Causal Linkage & Telemetry Fusion</strong>
-                                Integrating real-world telemetry parameters with LightGBM foundational models, the system precisely understands why drivers perform differently. It doesn't just predict the outcome; it exposes the causal variables—such as dirty air penalty, fuel load, and compound transitions—driving the race's evolution.
+                            <div className="feature-item tech-card">
+                                <div className="feature-icon">📊</div>
+                                <div className="feature-text">
+                                    <strong>Causal Linkage & Telemetry Fusion</strong>
+                                    Integrating real-world telemetry parameters with LightGBM foundational models, the system precisely understands why drivers perform differently. It doesn't just predict the outcome; it exposes the causal variables—such as dirty air penalty, fuel load, and compound transitions—driving the race's evolution.
+                                </div>
                             </div>
-                        </li>
-                    </ul>
+                        </div>
+                    </div>
 
                     <p className="explanation-footer">
                         Designed to model the upcoming 2026 regulations and test the limits of what AI can predict on the grid.

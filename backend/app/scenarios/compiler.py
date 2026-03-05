@@ -6,7 +6,7 @@ and sets up the RaceState.
 from ..models.race_state import (
     RaceState, Car, Meta, RaceControl,
     CarIdentity, CarTelemetry, CarSystems, CarStrategy, CarTiming,
-    TireState, CarStatus, Weather, TireCompound
+    TireState, CarStatus, Weather, TireCompound, TrackEvolution
 )
 from ..data.tracks import TRACKS, TRACK_MONACO, DRIVERS, TRACK_AFFINITY
 from .types import ScenarioConfig, GridCarConfig
@@ -34,6 +34,11 @@ def compile_scenario(config: ScenarioConfig) -> RaceState:
             rain_probability=rain_prob,
             temperature=temp,
             wind_speed=0.0
+        ),
+        "track_evolution": TrackEvolution(
+            rubber_level=config.race_structure.track_rubber_level,
+            grip_level=config.race_structure.track_grip_baseline,
+            rubber_buildup_rate=config.race_structure.rubber_buildup_rate,
         )
     })
 

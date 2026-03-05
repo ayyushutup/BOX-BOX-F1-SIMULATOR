@@ -7,6 +7,11 @@ from typing import Dict, List, Optional
 from app.models.race_state import RaceState, RaceControl
 from app.ml.monte_carlo import MonteCarloRaceSimulator
 from app.ml.rl_predictor import RLDriverPredictor
+from app.simulation.physics import (
+    calculate_dirty_air_factor, calculate_dirty_air_mistake_effect,
+    calculate_track_grip, update_rubber_level,
+    calculate_momentum_effect,
+)
 
 # Configuration
 MODEL_DIR = "app/ml/models"
@@ -236,11 +241,58 @@ class RacePredictor:
                 position_factor = max(0.05, 1.0 - (car.timing.position - 1) / 20.0)
                 quali_term = qualifying_delta * position_factor * 0.5  # damped
             
+            # --- Dirty air term: penalize drivers stuck following closely ---
+            dirty_air_term = 0.0
+            gap_ahead = car.timing.interval if car.timing.interval is not None else 99.0
+            da_factor = calculate_dirty_air_factor(gap_ahead)
+            if da_factor > 0.05:
+                # Dirty air hurts your chances
+                dirty_air_term = np.log(max(0.5, 1.0 - da_factor * 0.15))  # Up to -15% odds
+            
+            # --- Track grip term: evolving grip benefits race progress ---
+            track_grip_term = 0.0
+            if hasattr(state.track, 'track_evolution') and state.track.track_evolution:
+                te = state.track.track_evolution
+                # Simulate grip at current lap based on rubber buildup
+                race_progress = car.timing.lap / max(1, state.meta.laps_total)
+                sim_rubber = te.rubber_level + te.rubber_buildup_rate * car.timing.lap * (len(state.cars) / 20.0)
+                sim_grip = calculate_track_grip(te.grip_level, sim_rubber)
+                if sim_grip > 1.02:
+                    track_grip_term = np.log(1.0 + (sim_grip - 1.0) * 0.05)  # Subtle boost
+            
+            # --- Momentum term: psychological state ---
+            momentum_term = 0.0
+            driver_momentum = getattr(car, 'momentum', 0.0)
+            if abs(driver_momentum) > 0.1:
+                mom_effects = calculate_momentum_effect(driver_momentum)
+                # Positive momentum boosts, negative penalizes
+                momentum_term = np.log(max(0.5, 1.0 + mom_effects['aggression_mod'] * 0.5 - mom_effects['mistake_mod'] * 0.3))
+            
+            # --- Championship pressure term ---
+            championship_term = 0.0
+            if scenario_config:
+                driver_cfg = scenario_config.drivers.get(car.identity.driver)
+                if driver_cfg:
+                    champ_pos = getattr(driver_cfg, 'championship_position', 0)
+                    champ_pts = getattr(driver_cfg, 'championship_points', 0)
+                    if champ_pos > 0:
+                        pressure_handling = getattr(driver_cfg, 'pressure_handling', 1.0)
+                        if champ_pos <= 3:  # Title contender
+                            # Leaders are conservative (slightly penalized for risk aversion)
+                            # Chasers are aggressive (boosted but mistake-prone)
+                            if champ_pos == 1:
+                                championship_term = -0.05 * (2.0 - pressure_handling)  # Conservative penalty
+                            else:
+                                championship_term = 0.08 * pressure_handling  # Aggressive boost
+            
             # =================================================================
             # COMPOSE: logit(posterior) = logit(prior) + Σ likelihood terms
             # =================================================================
-            logit_win += chaos_term + tire_term + rain_term + skill_term + rl_term + quali_term
-            logit_podium += chaos_term * 0.7 + tire_term + rain_term + skill_term * 0.6 + rl_term * 0.8 + quali_term * 0.7
+            logit_win += (chaos_term + tire_term + rain_term + skill_term + rl_term 
+                         + quali_term + dirty_air_term + track_grip_term + momentum_term + championship_term)
+            logit_podium += (chaos_term * 0.7 + tire_term + rain_term + skill_term * 0.6 + rl_term * 0.8 
+                           + quali_term * 0.7 + dirty_air_term * 0.8 + track_grip_term * 0.8 
+                           + momentum_term * 0.7 + championship_term * 0.6)
             
             # Convert back to probability via sigmoid
             p_win = 1.0 / (1.0 + np.exp(-logit_win))
@@ -281,6 +333,25 @@ class RacePredictor:
                 
             if driver_form_drift:
                 factors.append("Form Drift Active")
+            
+            # New v2 factors
+            if da_factor > 0.2:
+                factors.append(f"Dirty Air Penalty ({int(da_factor * 100)}%)")
+            if da_factor > 0.5 and gap_ahead < 1.0:
+                factors.append("Stuck in DRS Train")
+            
+            if track_grip_term > 0.001:
+                factors.append("Track Grip Improving")
+            
+            if driver_momentum > 0.3:
+                factors.append(f"Positive Momentum (+{driver_momentum:.1f})")
+            elif driver_momentum < -0.3:
+                factors.append(f"Tilting ({driver_momentum:.1f})")
+            
+            if championship_term > 0:
+                factors.append("Championship Chaser Aggression")
+            elif championship_term < 0:
+                factors.append("Championship Leader Caution")
                 
             factors.append(f"Track Pos: P{car.timing.position}")
             causal_factors[car.identity.driver] = factors
@@ -367,6 +438,21 @@ class RacePredictor:
         # =================================================================
         # STAGE 4: POSTERIOR — Monte Carlo with RL-informed noise
         # =================================================================
+        # Build championship data for dynamic rivalries
+        championship_data = None
+        if scenario_config:
+            championship_data = {}
+            for d_code, d_cfg in scenario_config.drivers.items():
+                champ_pos = getattr(d_cfg, 'championship_position', 0)
+                champ_pts = getattr(d_cfg, 'championship_points', 0)
+                if champ_pos > 0 or champ_pts > 0:
+                    championship_data[d_code] = {'position': champ_pos, 'points': champ_pts}
+            if not championship_data:
+                championship_data = None
+        
+        # Track SC probability
+        track_sc_prob = state.track.sc_probability / 100.0 if state.track.sc_probability else 0.2
+        
         mc_results = self.mc_simulator.simulate(
             win_probs=win_prob_dict,
             podium_probs=podium_prob_dict,
@@ -374,7 +460,9 @@ class RacePredictor:
             incident_frequency=chaos_multiplier,
             rl_signals=rl_signals_dict,
             driver_form_drift=driver_form_drift,
-            chaos_scaling=chaos_scaling
+            chaos_scaling=chaos_scaling,
+            championship_data=championship_data,
+            track_sc_probability=track_sc_prob,
         )
 
         # Assemble full prediction response
