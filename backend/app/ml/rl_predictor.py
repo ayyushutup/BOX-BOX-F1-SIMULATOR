@@ -86,7 +86,8 @@ class RLDriverPredictor:
                 return 0.0, 0.5, 0.0 # fallback
             raise e
 
-    def simulate_lap_performance(self, track_length=5000, base_speed=250.0, driver_skill=0.9, personality=None):
+    def simulate_lap_performance(self, track_length=5000, base_speed=250.0, driver_skill=0.9, personality=None,
+                                 compound="MEDIUM", current_wear=0.1, current_temp=100.0, track_temp=35.0):
         """
         Runs a fast offline 1D simulation of a single lap using the RL model to
         give us rich signals for the Bayesian prediction pipeline.
@@ -120,11 +121,11 @@ class RLDriverPredictor:
         extreme_input_ticks = 0
         total_ticks = 0
         
-        # We simulate a lap using standard 0.1s ticks
-        tick_s = 0.1 
+        # We simulate a lap using 0.5s ticks for much faster bulk processing
+        tick_s = 0.5
         
-        # Max steps to prevent infinite loops (e.g. if the model hallucinates going 0kmh)
-        max_steps = 2000 
+        # Max steps to prevent infinite loops
+        max_steps = 400
         steps = 0
         
         x, y, heading = 0.0, 0.0, 0.0 # Fictional generic setup
@@ -133,6 +134,8 @@ class RLDriverPredictor:
         sim_dirty_air = 0.0  # Clean air for baseline simulation
         sim_momentum = 0.0   # Neutral momentum
         sim_track_grip = 1.0  # Start at baseline grip
+        
+        sim_tire_temp = current_temp
         
         while distance_covered < track_length and steps < max_steps:
             # Track grip evolves over the lap
@@ -153,7 +156,17 @@ class RLDriverPredictor:
             # Incorporate traits into physics loosely for this simulation
             if personality['aggression'] > 0.8:
                 accel *= 1.1 # highly aggressive drivers brake later and accelerate harder
+                
+            # Simulate tick-by-tick thermodynamics
+            heat_generated = ((throttle * 15.0) + (brake * 20.0) + (abs(steering) * 5.0)) * tick_s * (0.5 + personality['aggression'])
+            cooling = (current_speed_kmh / 250.0) * 8.0 * tick_s
+            sim_tire_temp += heat_generated - cooling
             
+            # Reduce driver speed in future ticks if overheating (thermal degradation cap)
+            if sim_tire_temp > 125.0:
+                overheat_degree = sim_tire_temp - 125.0
+                accel -= overheat_degree * 0.15 # Massive penalty on acceleration
+                
             current_speed_kmh = max(30.0, min(350.0, current_speed_kmh + accel))
             speed_samples.append(current_speed_kmh)
             

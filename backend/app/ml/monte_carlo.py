@@ -16,6 +16,7 @@ import math
 import numpy as np
 from typing import Dict, List, Optional
 from collections import Counter, defaultdict
+from app.simulation.interaction_graph import RaceInteractionGraph
 
 
 class MonteCarloRaceSimulator:
@@ -35,6 +36,10 @@ class MonteCarloRaceSimulator:
         chaos_scaling: str = "linear",    # P4: linear, exponential, clustered
         championship_data: Optional[Dict[str, Dict]] = None,  # {driver: {position, points}}
         track_sc_probability: float = 0.2,  # Base SC probability for this track
+        driver_gaps: Optional[Dict[str, float]] = None,  # {driver: gap_to_car_ahead}
+        tire_deltas: Optional[Dict[str, float]] = None,  # {driver: tire_pace_advantage_vs_ahead}
+        driver_personalities: Optional[Dict[str, Dict]] = None,  # {driver: personality_dict}
+        track_info: Optional[Dict[str, any]] = None,  # {id, expected_overtakes, is_street_circuit}
     ) -> Dict:
         """
         Run Monte Carlo simulations with anti-determinism layers.
@@ -245,19 +250,43 @@ class MonteCarloRaceSimulator:
                     sim_strengths = sim_strengths * 0.30 + mean_strength * 0.70
 
             # =========================================================
-            # LAYER 5.7: DRS Train Cluster Penalty (v3)
+            # LAYER 5.7: Race Interaction Graph (v4)
             # =========================================================
-            # Simulate drivers stuck in traffic getting penalized
-            # Sort by current sim strength, apply dirty air cascade
+            # Build interaction graph from current sim order
             strength_order = np.argsort(-sim_strengths)
+            sorted_drivers = [drivers[idx] for idx in strength_order]
+
+            # Estimate gaps from strength ratios for this simulation
+            sim_gaps = {}
             for rank in range(1, n_drivers):
-                idx = strength_order[rank]
-                leader_idx = strength_order[rank - 1]
-                # If close in strength (within 15%), dirty air penalty
-                ratio = sim_strengths[idx] / max(sim_strengths[leader_idx], 1e-6)
-                if ratio > 0.85:
-                    # In dirty air — 0.97x penalty
-                    sim_strengths[idx] *= 0.97
+                follower = sorted_drivers[rank]
+                leader = sorted_drivers[rank - 1]
+                # Use real gaps if available, otherwise estimate from strength ratio
+                if driver_gaps and follower in driver_gaps:
+                    sim_gaps[follower] = driver_gaps[follower]
+                else:
+                    ratio = sim_strengths[strength_order[rank]] / max(sim_strengths[strength_order[rank - 1]], 1e-6)
+                    sim_gaps[follower] = max(0.1, (1.0 - ratio) * 5.0)  # Estimate gap from strength delta
+
+            graph = RaceInteractionGraph()
+            _ti = track_info or {}
+            graph.build(
+                drivers_sorted=sorted_drivers,
+                gaps=sim_gaps,
+                tire_deltas=tire_deltas,
+                personalities=driver_personalities,
+                sc_active=sc_triggered,
+                track_id=_ti.get('id', ''),
+                expected_overtakes=_ti.get('expected_overtakes', 0),
+                is_street_circuit=_ti.get('is_street_circuit', False),
+            )
+
+            # Apply graph-derived strength modifiers
+            graph_modifiers = graph.get_strength_modifiers()
+            for j in range(n_drivers):
+                d = drivers[j]
+                modifier = graph_modifiers.get(d, 1.0)
+                sim_strengths[j] *= modifier
 
             # =========================================================
             # LAYER 6: Driver Interaction — Dynamic Rivalry (v3)
@@ -343,7 +372,7 @@ class MonteCarloRaceSimulator:
         # Compute distributions
         mc_win_dist = {d: win_counts[d] / n for d in drivers}
 
-        # Predicted order: sort by average position
+        # Compute average positions for all drivers
         avg_positions = {}
         for d in drivers:
             if position_counts[d]:
@@ -353,7 +382,10 @@ class MonteCarloRaceSimulator:
             else:
                 avg_positions[d] = n_drivers
 
-        predicted_order = sorted(drivers, key=lambda d: avg_positions[d])
+        # Predicted order: sort by Win Probability (Primary), then Average Position (Tie-breaker)
+        # Higher win probability = lower rank index
+        # Lower average position = lower rank index
+        predicted_order = sorted(drivers, key=lambda d: (-mc_win_dist.get(d, 0.0), avg_positions.get(d, n_drivers)))
 
         # Position distributions + Volatility bands for ALL drivers (full P1-P20)
         pos_dists = {}
@@ -405,5 +437,6 @@ class MonteCarloRaceSimulator:
             "predicted_order": predicted_order,
             "position_distributions": pos_dists,
             "volatility_bands": volatility_bands,
-            "interaction_matrix": interaction_matrix
+            "interaction_matrix": interaction_matrix,
+            "avg_positions": avg_positions
         }

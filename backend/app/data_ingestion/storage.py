@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from ..models.race_state import RaceState
 from ..models.db import RaceModel, RaceStateModel, TelemetryModel, RaceStatus, SCStatus
 from ..database import SessionLocal
@@ -51,7 +51,11 @@ def save_race(season: int, round_num: int, states: List[RaceState]) -> str:
             state_models.append(db_state)
 
             # Telemetry for each car
-            dt_time = datetime.fromtimestamp(s.meta.timestamp / 1000.0) if s.meta.timestamp > 0 else datetime.utcnow()
+            dt_time = (
+                datetime.fromtimestamp(s.meta.timestamp / 1000.0, tz=timezone.utc)
+                if s.meta.timestamp > 0
+                else datetime.now(timezone.utc)
+            )
             for car in s.cars:
                 t_model = TelemetryModel(
                     time=dt_time,

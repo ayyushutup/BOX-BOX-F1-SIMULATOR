@@ -37,6 +37,7 @@ class TireState(BaseModel):
     compound: TireCompound
     age: int = Field(ge=0, description="Laps on this set")
     wear: float = Field(ge=0.0, le=1.0, description="0.0 = new, 1.0 = worn out")
+    temperature: float = Field(default=90.0, description="Celsius")
 
 class Weather(BaseModel):
     """Track weather conditions"""        

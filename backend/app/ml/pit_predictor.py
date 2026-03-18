@@ -8,6 +8,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
 from app.models.race_state import Car, RaceState
 from app.models.strategy import PitStrategyResult
+from app.ml.tire_model import NeuralTireModel
 
 class PitStrategyPredictor:
     """Singleton for Pit Strategy Evaluation."""
@@ -80,15 +81,40 @@ class PitStrategyPredictor:
         positions_lost = drop_position - car.timing.position
 
         # 2. Pace Delta (Undercut Potential)
-        # Fast estimation: fresh tires are ~2.0s faster than 15-lap old tires.
-        tire_age = float(car.telemetry.tire_state.age)
-        tire_deg_multiplier = 1.0
-        # Basic heuristic pace advantage
-        fresh_tire_advantage = min(2.5, (tire_age / 10.0) * tire_deg_multiplier)
+        from app.ml.tire_model import NeuralTireModel
         
-        # Warmup penalty depends on track conditions and compound
-        warmup_penalty = 0.8
-        net_outlap_advantage = fresh_tire_advantage - warmup_penalty
+        tire_age = float(car.telemetry.tire_state.age)
+        tire_model = NeuralTireModel()
+        
+        # Emulate track conditionals
+        track_temp = state.track.weather.temperature + 10.0 if state.track and hasattr(state.track.weather, 'temperature') else 35.0
+        abrasion_map = {"LOW": 0.5, "MEDIUM": 1.0, "HIGH": 1.5}
+        track_abrasiveness = abrasion_map.get(state.track.abrasion, 1.0) if state.track and hasattr(state.track, 'abrasion') else 1.0
+        push_level = 0.5 + (car.personality.get('aggression', 0.5) * 0.5)
+
+        # Current tire pace penalty
+        _, _, current_penalty = tire_model.predict_degradation(
+            compound=car.telemetry.tire_state.compound,
+            track_temp=track_temp,
+            track_abrasiveness=track_abrasiveness,
+            driver_push_level=push_level,
+            lap_number=int(tire_age),
+            current_wear=car.telemetry.tire_state.wear,
+            current_temp=getattr(car.telemetry.tire_state, 'temperature', 90.0)
+        )
+
+        # Fresh tire pace penalty (out of blankets)
+        _, _, fresh_penalty = tire_model.predict_degradation(
+            compound="MEDIUM", # General baseline for undercut comparison
+            track_temp=track_temp,
+            track_abrasiveness=track_abrasiveness,
+            driver_push_level=push_level,
+            lap_number=0,
+            current_wear=0.0,
+            current_temp=70.0
+        )
+        
+        net_outlap_advantage = current_penalty - fresh_penalty
         
         # 3. Calculate EV Score
         ev_score = 0.0

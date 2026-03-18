@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Dict, List, Optional
+import logging
 from app.ml.predictor import RacePredictor
 from app.models.race_state import (
     RaceState, Meta, Car, Track, Weather, Sector, SectorType,
@@ -10,6 +11,7 @@ from app.models.race_state import (
 
 router = APIRouter()
 predictor = RacePredictor()
+logger = logging.getLogger("boxbox.api.ml")
 
 # --- Request Models (Matching Frontend format_race_state) ---
 class FrontendCar(BaseModel):
@@ -27,8 +29,7 @@ class FrontendCar(BaseModel):
     gap_to_leader: Optional[float] = None
     interval: Optional[float] = None
     
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 class FrontendState(BaseModel):
     tick: int
@@ -41,8 +42,7 @@ class FrontendState(BaseModel):
     safety_car_active: Optional[bool] = None
     vsc_active: Optional[bool] = None
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 class PredictionResponse(BaseModel):
     lap: int
@@ -132,9 +132,8 @@ def get_predictions(data: FrontendState):
         return predictions
         
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Prediction request via /api/ml/predict failed")
+        raise HTTPException(status_code=500, detail="Prediction request failed")
 
 
 @router.post("/retrain")
@@ -145,12 +144,12 @@ async def retrain_model(background_tasks: BackgroundTasks):
     from ..ml.train_model import train_models
     
     def _train_task():
-        print("[ML] Starting background training...")
+        logger.info("[ML] Starting background training...")
         try:
             train_models()
-            print("[ML] Training completed successfully.")
+            logger.info("[ML] Training completed successfully.")
         except Exception as e:
-            print(f"[ML] Training failed: {e}")
+            logger.exception("[ML] Training failed: %s", e)
 
     background_tasks.add_task(_train_task)
     return {"message": "Model retraining started in background"}

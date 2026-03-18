@@ -8,6 +8,7 @@ No external LLM required.
 """
 
 import random
+import math
 from typing import Dict, List, Optional
 
 
@@ -63,10 +64,11 @@ class RaceCommentator:
             return "📡 Insufficient data for commentary."
 
         # Route to appropriate generator
+        avg_positions = predictions.get('avg_positions', {})
         if mode == "cinematic":
-            result = self._generate_cinematic(mc, order, factors, bands, baseline_state, scenario_config, intensity)
+            result = self._generate_cinematic(mc, order, factors, bands, baseline_state, scenario_config, intensity, avg_positions)
         else:
-            result = self._generate_standard(mc, order, factors, bands, baseline_state, scenario_config)
+            result = self._generate_standard(mc, order, factors, bands, baseline_state, scenario_config, avg_positions)
 
         # Update state for momentum tracking
         self._prev_mc = mc.copy()
@@ -75,7 +77,7 @@ class RaceCommentator:
 
         return result
 
-    def _generate_standard(self, mc: Dict, order: List[str], factors: Dict, bands: Dict, baseline_state: Dict, scenario_config: Optional[Dict]) -> str:
+    def _generate_standard(self, mc: Dict, order: List[str], factors: Dict, bands: Dict, baseline_state: Dict, scenario_config: Optional[Dict], avg_positions: Dict = {}) -> str:
         """Original analytical generation method."""
         sections = []
 
@@ -83,7 +85,7 @@ class RaceCommentator:
         sections.append(self._headline(order, mc))
 
         # === LEADER ANALYSIS ===
-        sections.append(self._leader_analysis(order, mc, factors, bands))
+        sections.append(self._leader_analysis(order, mc, factors, bands, avg_positions))
 
         # === CHALLENGER STORY ===
         if len(order) >= 2:
@@ -103,7 +105,7 @@ class RaceCommentator:
 
         return "\n\n".join([s for s in sections if s])
 
-    def _generate_cinematic(self, mc: Dict, order: List[str], factors: Dict, bands: Dict, baseline_state: Dict, scenario_config: Optional[Dict], intensity: str) -> str:
+    def _generate_cinematic(self, mc: Dict, order: List[str], factors: Dict, bands: Dict, baseline_state: Dict, scenario_config: Optional[Dict], intensity: str, avg_positions: Dict = {}) -> str:
         """
         Cinematic Broadcast Mode generation.
         Translates probabilities into tension, stakes, and storyline.
@@ -303,7 +305,7 @@ class RaceCommentator:
 
         return random.choice(openers)
 
-    def _leader_analysis(self, order: List[str], mc: Dict, factors: Dict, bands: Dict) -> str:
+    def _leader_analysis(self, order: List[str], mc: Dict, factors: Dict, bands: Dict, avg_positions: Dict = {}) -> str:
         leader = order[0]
         pct = mc.get(leader, 0) * 100
         leader_factors = factors.get(leader, [])
@@ -332,6 +334,13 @@ class RaceCommentator:
         # Volatility bands
         opt = leader_band.get('optimistic', 1)
         pes = leader_band.get('pessimistic', 5)
+        
+        # Divergence analysis: Is the win favorite different from the consistency favorite?
+        if avg_positions:
+            avg_leader = min(avg_positions, key=avg_positions.get)
+            if avg_leader != leader:
+                lines.append(f"While {self._short(leader)} has the highest winning potential in peak scenarios, {self._short(avg_leader)} is actually the more consistent finisher across the spread.")
+
         if pes > 3:
             lines.append(f"But the volatility window is wide — anywhere from P{opt} to P{pes} across simulations. This isn't locked in.")
         elif pes <= 2:
@@ -516,16 +525,31 @@ class RaceCommentator:
             race_phase = "late"
 
         # === CONFIDENCE SCORE ===
-        # Based on how concentrated the distribution is — higher = more confident
-        probs = list(mc.values())
+        # Recalibrated to be human-readable for F1-sized fields (20 drivers).
+        # We blend entropy with front-of-field concentration signals.
+        probs = sorted([p for p in mc.values() if p > 0], reverse=True)
         if probs:
-            max_p = max(probs)
-            entropy = -sum(p * (p and __import__('math').log2(p) or 0) for p in probs if p > 0)
-            max_entropy = __import__('math').log2(len(probs)) if len(probs) > 1 else 1
-            # Confidence: 100 when one driver dominates, 0 when perfectly uniform
-            confidence_score = max(0, min(100, int((1.0 - entropy / max(max_entropy, 1)) * 100)))
+            top1 = probs[0]
+            top2 = probs[1] if len(probs) > 1 else 0.0
+            top3_share = sum(probs[:3])
+            top12_gap_norm = min(1.0, max(0.0, (top1 - top2) / 0.12))
+
+            entropy = -sum(p * math.log2(p) for p in probs)
+            max_entropy = math.log2(len(probs)) if len(probs) > 1 else 1.0
+            entropy_conf = max(0.0, min(1.0, 1.0 - (entropy / max_entropy)))
+
+            structure_conf = (
+                0.35 * top1 +
+                0.45 * top3_share +
+                0.20 * top12_gap_norm
+            )
+            raw_conf = 0.45 * entropy_conf + 0.55 * structure_conf
+
+            # Display calibration: avoid misleading single-digit scores in normal races.
+            confidence_score = int(round(20 + raw_conf * 75))
+            confidence_score = max(20, min(95, confidence_score))
         else:
-            confidence_score = 0
+            confidence_score = 20
 
         # === KEY FACTORS ===
         key_factors = []
@@ -593,4 +617,3 @@ class RaceCommentator:
             "bias_warnings": bias_warnings,
             "race_phase": race_phase
         }
-

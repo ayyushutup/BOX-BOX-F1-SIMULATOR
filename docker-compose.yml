@@ -23,6 +23,47 @@ services:
       - redis_data:/data
     restart: unless-stopped
 
+  backend:
+    build: ./backend
+    container_name: boxbox_backend
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/models:/models
+      - ./backend/api.log:/app/api.log
+    networks:
+      - boxbox-net
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    shm_size: '2gb'
+    depends_on:
+      timescaledb:
+        condition: service_started
+      redis:
+        condition: service_started
+
+  frontend:
+    build: ./frontend
+    container_name: boxbox_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - boxbox-net
+
+networks:
+  boxbox-net:
+    driver: bridge
+
 volumes:
   timescaledb_data:
   redis_data:

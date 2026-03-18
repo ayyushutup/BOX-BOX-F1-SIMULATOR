@@ -25,6 +25,14 @@ const TEAM_COLORS = {
 
 const OutcomeDistribution = ({ predictions, baselinePredictions, raceState }) => {
     const [compareMode, setCompareMode] = useState(true);
+    const [isMobile, setIsMobile] = useState(false);
+
+    React.useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
 
     let data = [];
     if (predictions && predictions.mc_win_distribution) {
@@ -143,7 +151,7 @@ const OutcomeDistribution = ({ predictions, baselinePredictions, raceState }) =>
     const isComparing = compareMode && baselinePredictions !== null;
 
     return (
-        <div className="chart-widget hover-elevate" style={{ minHeight: '340px', flex: 1, borderTop: '2px solid var(--cyan)' }}>
+        <div className="chart-widget hover-elevate" style={{ minHeight: isMobile ? '430px' : '340px', flex: 1, borderTop: '2px solid var(--cyan)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                 <div>
                     <h2 className="panel-title" style={{ marginBottom: '4px', color: 'var(--cyan)' }}>FINAL OUTCOME DISTRIBUTION</h2>
@@ -175,7 +183,7 @@ const OutcomeDistribution = ({ predictions, baselinePredictions, raceState }) =>
                 </div>
             </div>
 
-            <div style={{ flex: 1, minHeight: 0, width: '100%', position: 'relative' }}>
+            <div style={{ flex: 1, minHeight: isMobile ? '320px' : 0, height: isMobile ? '320px' : '100%', width: '100%', position: 'relative' }}>
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={data} margin={{ top: 20, right: 10, left: -20, bottom: 5 }} barGap={2}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />

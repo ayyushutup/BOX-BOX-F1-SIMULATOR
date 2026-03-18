@@ -1,4 +1,11 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+
+const deepClone = (value) => {
+    if (typeof structuredClone === 'function') {
+        return structuredClone(value);
+    }
+    return JSON.parse(JSON.stringify(value));
+};
 
 const CATEGORIES = [
     { id: 'RACE_STRUCTURE', label: 'Race Structure', desc: 'Track, laps, grid order & session config', icon: '🏁', color: '#3498DB' },
@@ -80,6 +87,12 @@ const TOOLTIPS = {
     remove_driver: 'Remove this driver from the simulation entirely. They will not appear in predictions.',
     move_up: 'Move this driver one position forward on the grid. Grid position directly affects win probability in the ML model.',
     move_down: 'Move this driver one position back on the grid. Grid position directly affects win probability in the ML model.',
+    grid_shuffle: 'Randomly shuffles the entire starting grid. Useful for instant scenario stress-testing.',
+    grid_reverse: 'Reverses the full starting grid order in one click.',
+    grid_reset: 'Restores the starting grid to the default baseline order.',
+    grid_random_tires: 'Assigns random dry compounds (SOFT/MEDIUM/HARD) across the current grid.',
+    move_to_position: 'Instantly move a selected driver to a target grid slot without multiple up/down clicks.',
+    drag_driver: 'Click and drag a driver row to glide it to any target position in the grid.',
 };
 
 // Tooltip component
@@ -266,8 +279,20 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
     const [activeTab, setActiveTab] = useState('RACE_STRUCTURE');
     const [selectedDriverForEdit, setSelectedDriverForEdit] = useState("VER");
     const [selectedTeamForEdit, setSelectedTeamForEdit] = useState("Red Bull Racing");
-    const [config, setConfig] = useState(JSON.parse(JSON.stringify(defaultConfig)));
+    const [gridMoveDriver, setGridMoveDriver] = useState("VER");
+    const [gridMovePosition, setGridMovePosition] = useState(1);
+    const [draggedGridIndex, setDraggedGridIndex] = useState(null);
+    const [dragOverGridIndex, setDragOverGridIndex] = useState(null);
+    const [config, setConfig] = useState(deepClone(defaultConfig));
     const [hoveredTab, setHoveredTab] = useState(null);
+
+    const [isMobile, setIsMobile] = useState(false);
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
 
     const updateNestedConfig = (section, key, value) => {
         setConfig(prev => ({ ...prev, [section]: { ...prev[section], [key]: value } }));
@@ -275,16 +300,85 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
 
     // Grid helpers
     const recalculatePositions = (grid) => grid.map((car, idx) => ({ ...car, position: idx + 1 }));
+    const clampGridPosition = (position) => Math.max(1, Math.min(config.race_structure.grid.length, position));
     const handleMoveCarUp = (index) => { if (index === 0) return; const g = [...config.race_structure.grid];[g[index - 1], g[index]] = [g[index], g[index - 1]]; updateNestedConfig('race_structure', 'grid', recalculatePositions(g)); };
     const handleMoveCarDown = (index) => { if (index === config.race_structure.grid.length - 1) return; const g = [...config.race_structure.grid];[g[index + 1], g[index]] = [g[index], g[index + 1]]; updateNestedConfig('race_structure', 'grid', recalculatePositions(g)); };
     const handleRemoveCar = (index) => { const g = config.race_structure.grid.filter((_, i) => i !== index); updateNestedConfig('race_structure', 'grid', recalculatePositions(g)); };
     const handleAddCar = (driverId) => { const d = defaultGrid.find(d => d.driver === driverId); if (!d) return; updateNestedConfig('race_structure', 'grid', recalculatePositions([...config.race_structure.grid, { ...d }])); };
+    const moveDriverToPosition = (driverId, targetPos) => {
+        const grid = [...config.race_structure.grid];
+        const fromIndex = grid.findIndex(car => car.driver === driverId);
+        if (fromIndex === -1) return;
+        const [driverRow] = grid.splice(fromIndex, 1);
+        const toIndex = clampGridPosition(targetPos) - 1;
+        grid.splice(toIndex, 0, driverRow);
+        updateNestedConfig('race_structure', 'grid', recalculatePositions(grid));
+    };
+    const handleShuffleGrid = () => {
+        const grid = [...config.race_structure.grid];
+        for (let i = grid.length - 1; i > 0; i -= 1) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [grid[i], grid[j]] = [grid[j], grid[i]];
+        }
+        updateNestedConfig('race_structure', 'grid', recalculatePositions(grid));
+    };
+    const handleReverseGrid = () => {
+        const grid = [...config.race_structure.grid].reverse();
+        updateNestedConfig('race_structure', 'grid', recalculatePositions(grid));
+    };
+    const handleResetGrid = () => {
+        updateNestedConfig('race_structure', 'grid', deepClone(defaultGrid));
+    };
+    const handleRandomizeCompounds = () => {
+        const dryCompounds = ["SOFT", "MEDIUM", "HARD"];
+        const grid = config.race_structure.grid.map(car => ({
+            ...car,
+            tire_compound: dryCompounds[Math.floor(Math.random() * dryCompounds.length)]
+        }));
+        updateNestedConfig('race_structure', 'grid', grid);
+    };
+    const handleDragStartGridRow = (index) => {
+        setDraggedGridIndex(index);
+        setDragOverGridIndex(index);
+    };
+    const handleDragOverGridRow = (event, index) => {
+        event.preventDefault();
+        if (dragOverGridIndex !== index) {
+            setDragOverGridIndex(index);
+        }
+    };
+    const handleDropGridRow = (event, dropIndex) => {
+        event.preventDefault();
+        if (draggedGridIndex === null || draggedGridIndex === dropIndex) {
+            setDraggedGridIndex(null);
+            setDragOverGridIndex(null);
+            return;
+        }
+        const grid = [...config.race_structure.grid];
+        const [draggedCar] = grid.splice(draggedGridIndex, 1);
+        grid.splice(dropIndex, 0, draggedCar);
+        updateNestedConfig('race_structure', 'grid', recalculatePositions(grid));
+        setDraggedGridIndex(null);
+        setDragOverGridIndex(null);
+    };
+    const handleDragEndGridRow = () => {
+        setDraggedGridIndex(null);
+        setDragOverGridIndex(null);
+    };
     const availableDriversToAdd = defaultGrid.filter(d => !config.race_structure.grid.some(c => c.driver === d.driver));
+
+    useEffect(() => {
+        const currentDriverExists = config.race_structure.grid.some(car => car.driver === gridMoveDriver);
+        if (!currentDriverExists && config.race_structure.grid.length > 0) {
+            setGridMoveDriver(config.race_structure.grid[0].driver);
+        }
+        setGridMovePosition(prev => clampGridPosition(prev));
+    }, [config.race_structure.grid, gridMoveDriver]);
 
     // Preset application
     const applyPreset = (preset) => {
         setConfig(prev => {
-            const next = JSON.parse(JSON.stringify(prev));
+            const next = deepClone(prev);
             if (preset.config.race_structure) Object.assign(next.race_structure, preset.config.race_structure);
             if (preset.config.weather) next.weather = { ...next.weather, ...preset.config.weather };
             if (preset.config.engineering) Object.assign(next.engineering, preset.config.engineering);
@@ -295,29 +389,24 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
 
     // Reset handlers
     const resetSection = (section) => {
-        const defaults = JSON.parse(JSON.stringify(defaultConfig));
+        const defaults = deepClone(defaultConfig);
         setConfig(prev => ({ ...prev, [section]: defaults[section] }));
     };
-    const resetAll = () => setConfig(JSON.parse(JSON.stringify(defaultConfig)));
+    const resetAll = () => setConfig(deepClone(defaultConfig));
 
-    const handleLaunch = () => onSelectScenario("custom", config);
+    const handleLaunch = () => {
+        if (config.race_structure.grid.length < 2) {
+            alert("A minimum of 2 drivers are required to launch a simulation. Please add them in the Race Structure section.");
+            return;
+        }
+        onSelectScenario("custom", config);
+    }
 
-    // Live preview computations
-    const livePreview = useMemo(() => {
+    const chaosIndex = useMemo(() => {
         const chaos = config.chaos;
-        const chaosIndex = Math.min(100, Math.round(
+        return Math.min(100, Math.round(
             ((chaos.incident_frequency + chaos.safety_car_probability + chaos.mechanical_randomness + chaos.ai_irrationality) / 4 - 0.5) / 2.5 * 100
         ));
-        const scRisk = Math.min(100, Math.round(chaos.safety_car_probability * 28));
-        const rainProb = config.weather.timeline[0]?.rain_probability || 0;
-        const leader = config.race_structure.grid[0]?.driver || 'VER';
-        const tireDeg = config.engineering.tire_deg_multiplier;
-
-        let volatility = 'LOW';
-        if (chaosIndex > 60 || rainProb > 0.5) volatility = 'HIGH';
-        else if (chaosIndex > 30 || rainProb > 0.2) volatility = 'MODERATE';
-
-        return { chaosIndex, scRisk, leader, volatility, rainProb: Math.round(rainProb * 100), tireDeg };
     }, [config]);
 
     const activeCategory = CATEGORIES.find(c => c.id === activeTab);
@@ -325,146 +414,151 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
     return (
         <div className="scenario-library-container" style={{ padding: '24px', maxWidth: '1600px', margin: '0 auto', color: 'white', position: 'relative' }}>
 
-            {/* ========= LIVE IMPACT PREVIEW (Floating) ========= */}
-            <div style={{
-                position: 'sticky', top: '12px', float: 'right', zIndex: 50,
-                background: 'rgba(10,10,16,0.95)', border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '10px', padding: '12px 16px', minWidth: '200px',
-                backdropFilter: 'blur(10px)', boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
+            {/* ========= STICKY TOP CONTROLS (Mobile First) ========= */}
+            <div className={`laboratory-header-container ${isMobile ? 'sticky-header' : ''}`} style={{
+                position: isMobile ? 'sticky' : 'relative',
+                top: 0,
+                zIndex: 100,
+                background: isMobile ? 'var(--bg-base)' : 'transparent',
+                paddingBottom: '16px',
+                borderBottom: isMobile ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                marginBottom: '20px'
             }}>
-                <div style={{ fontSize: '0.55rem', color: '#888', letterSpacing: '2px', fontWeight: 700, marginBottom: '8px' }}>LIVE PREVIEW</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem' }}>
-                        <span style={{ color: '#888' }}>Leader</span>
-                        <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#fff' }}>{livePreview.leader}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? '0' : '20px' }}>
+                    <div>
+                        <button onClick={onBackToHome} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', marginBottom: '8px', fontSize: '0.8rem' }}>← BACK</button>
+                        <h1 style={{ fontSize: isMobile ? '1.5rem' : '2.5rem', fontWeight: 800, margin: 0, background: 'linear-gradient(90deg, #fff, #888)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                            {isMobile ? 'SCENARIO LAB' : 'SCENARIO LABORATORY'}
+                        </h1>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem' }}>
-                        <span style={{ color: '#888' }}>Volatility</span>
-                        <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', color: livePreview.volatility === 'HIGH' ? '#ff4444' : livePreview.volatility === 'MODERATE' ? '#ffc800' : '#00dc64' }}>{livePreview.volatility}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem' }}>
-                        <span style={{ color: '#888' }}>SC Risk</span>
-                        <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', color: livePreview.scRisk > 50 ? '#ff4444' : '#ffc800' }}>{livePreview.scRisk}%</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem' }}>
-                        <span style={{ color: '#888' }}>Rain</span>
-                        <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', color: livePreview.rainProb > 40 ? '#64C4FF' : '#888' }}>{livePreview.rainProb}%</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem' }}>
-                        <span style={{ color: '#888' }}>Chaos</span>
-                        <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', color: livePreview.chaosIndex > 60 ? '#ff4444' : livePreview.chaosIndex > 30 ? '#ffc800' : '#00dc64' }}>{livePreview.chaosIndex}/100</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* ========= HEADER ========= */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <div>
-                    <button onClick={onBackToHome} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', marginBottom: '8px', fontSize: '0.9rem' }}>← BACK TO HOME</button>
-                    <h1 style={{ fontSize: '2.5rem', fontWeight: 800, margin: 0, background: 'linear-gradient(90deg, #fff, #888)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                        SCENARIO LABORATORY
-                    </h1>
-                    <p style={{ color: 'var(--text-tertiary)', letterSpacing: '2px', textTransform: 'uppercase', fontSize: '0.8rem', marginTop: '4px' }}>
-                        Parameter-Driven Scenario Construction
-                    </p>
-                </div>
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <Tooltip text={TOOLTIPS.reset_all} position="bottom"><button onClick={resetAll} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#888', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px' }}>⟲ RESET ALL</button></Tooltip>
-                    <Tooltip text={TOOLTIPS.launch} position="bottom">
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {!isMobile && <Tooltip text={TOOLTIPS.reset_all} position="bottom"><button onClick={resetAll} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#888', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px' }}>⟲ RESET</button></Tooltip>}
                         <button
                             onClick={handleLaunch}
-                            className="launch-btn"
+                            className={`launch-btn ${config.race_structure.grid.length < 2 ? 'disabled' : ''}`}
+                            disabled={config.race_structure.grid.length < 2}
                             style={{
-                                background: 'var(--red)', color: 'white', border: 'none',
-                                padding: '14px 36px', borderRadius: '6px', fontWeight: 700,
-                                cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '1px',
-                                boxShadow: '0 0 20px rgba(225, 6, 0, 0.4)', fontSize: '0.9rem',
-                                transition: 'all 0.3s ease', position: 'relative', overflow: 'hidden',
+                                background: config.race_structure.grid.length < 2 ? 'var(--text-tertiary)' : 'var(--red)', color: 'white', border: 'none',
+                                padding: isMobile ? '10px 20px' : '14px 36px', borderRadius: '6px', fontWeight: 700,
+                                cursor: config.race_structure.grid.length < 2 ? 'not-allowed' : 'pointer', textTransform: 'uppercase', letterSpacing: '1px',
+                                boxShadow: config.race_structure.grid.length < 2 ? 'none' : '0 0 20px rgba(225, 6, 0, 0.4)', fontSize: isMobile ? '0.75rem' : '0.9rem',
+                                transition: 'all 0.3s ease', opacity: config.race_structure.grid.length < 2 ? 0.5 : 1
                             }}
                         >
-                            LAUNCH SIMULATION →
+                            {isMobile ? 'LAUNCH →' : 'LAUNCH SIMULATION →'}
                         </button>
-                    </Tooltip>
+                    </div>
                 </div>
-            </div>
 
-            {/* ========= PRESET CHIPS ========= */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.65rem', color: '#666', letterSpacing: '1px', fontWeight: 700, alignSelf: 'center', marginRight: '4px' }}>PRESETS</span>
-                {PRESETS.map(p => (
-                    <Tooltip key={p.id} text={TOOLTIPS[p.id]} position="bottom">
-                        <button onClick={() => applyPreset(p)} style={{
+                {/* ========= PRESET CHIPS (Scrollable on Mobile) ========= */}
+                <div style={{
+                    display: 'flex',
+                    gap: '8px',
+                    marginTop: '12px',
+                    overflowX: 'auto',
+                    paddingBottom: '4px',
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none'
+                }} className="no-scrollbar">
+                    {PRESETS.map(p => (
+                        <button key={p.id} onClick={() => applyPreset(p)} style={{
                             background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
                             color: '#ccc', padding: '6px 14px', borderRadius: '20px', cursor: 'pointer',
-                            fontSize: '0.72rem', fontWeight: 600, transition: 'all 0.2s',
+                            fontSize: '0.65rem', fontWeight: 600, transition: 'all 0.2s',
                             whiteSpace: 'nowrap',
-                        }}
-                            onMouseEnter={e => { e.target.style.background = 'rgba(255,255,255,0.1)'; e.target.style.borderColor = 'rgba(255,255,255,0.3)'; }}
-                            onMouseLeave={e => { e.target.style.background = 'rgba(255,255,255,0.04)'; e.target.style.borderColor = 'rgba(255,255,255,0.1)'; }}
-                        >
+                        }}>
                             {p.label}
                         </button>
-                    </Tooltip>
-                ))}
-            </div>
+                    ))}
+                </div>
 
-            {/* ========= MAIN LAYOUT ========= */}
-            <div style={{ display: 'flex', gap: '32px' }}>
-
-                {/* ===== SIDEBAR NAV ===== */}
-                <div style={{ width: '260px', display: 'flex', flexDirection: 'column', gap: '4px', flexShrink: 0 }}>
-                    {CATEGORIES.map(cat => {
-                        const isActive = activeTab === cat.id;
-                        const isHovered = hoveredTab === cat.id;
-                        return (
+                {isMobile && (
+                    <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingTop: '10px' }} className="no-scrollbar">
+                        {CATEGORIES.map(cat => (
                             <button
                                 key={cat.id}
                                 onClick={() => setActiveTab(cat.id)}
-                                onMouseEnter={() => setHoveredTab(cat.id)}
-                                onMouseLeave={() => setHoveredTab(null)}
                                 style={{
-                                    background: isActive ? 'rgba(255,255,255,0.06)' : isHovered ? 'rgba(255,255,255,0.03)' : 'transparent',
-                                    border: 'none',
-                                    borderLeft: isActive ? `3px solid ${cat.color}` : '3px solid transparent',
-                                    padding: '12px 16px',
-                                    borderRadius: '0 8px 8px 0',
-                                    color: isActive ? 'white' : isHovered ? '#ccc' : 'var(--text-tertiary)',
-                                    textAlign: 'left', cursor: 'pointer',
-                                    transition: 'all 0.25s ease',
-                                    boxShadow: isActive ? `inset 0 0 20px rgba(${cat.color === '#E74C3C' ? '231,76,60' : '255,255,255'},0.03)` : 'none',
+                                    background: activeTab === cat.id ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.04)',
+                                    border: `1px solid ${activeTab === cat.id ? cat.color : 'rgba(255,255,255,0.1)'}`,
+                                    color: activeTab === cat.id ? '#fff' : '#aaa',
+                                    borderRadius: '18px',
+                                    padding: '7px 14px',
+                                    fontSize: '0.68rem',
+                                    fontWeight: 700,
+                                    letterSpacing: '0.5px',
+                                    whiteSpace: 'nowrap',
                                 }}
                             >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                    <span style={{ fontSize: '1.1rem' }}>{cat.icon}</span>
-                                    <div>
-                                        <div style={{ fontSize: '0.85rem', fontWeight: 700 }}>{cat.label}</div>
-                                        <div style={{ fontSize: '0.6rem', color: isActive ? '#888' : '#555', marginTop: '2px', lineHeight: 1.3 }}>{cat.desc}</div>
-                                    </div>
-                                </div>
+                                {cat.icon} {cat.label}
                             </button>
-                        );
-                    })}
-                </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* ========= MAIN LAYOUT ========= */}
+            <div className="scenario-main-layout" style={{ display: 'flex', gap: '32px', flexDirection: isMobile ? 'column' : 'row' }}>
+
+                {/* ===== SIDEBAR NAV ===== */}
+                {!isMobile && (
+                    <div style={{ width: '260px', display: 'flex', flexDirection: 'column', gap: '4px', flexShrink: 0 }}>
+                        {CATEGORIES.map(cat => {
+                            const isActive = activeTab === cat.id;
+                            const isHovered = hoveredTab === cat.id;
+                            return (
+                                <button
+                                    key={cat.id}
+                                    onClick={() => setActiveTab(cat.id)}
+                                    onMouseEnter={() => setHoveredTab(cat.id)}
+                                    onMouseLeave={() => setHoveredTab(null)}
+                                    style={{
+                                        background: isActive ? 'rgba(255,255,255,0.06)' : isHovered ? 'rgba(255,255,255,0.03)' : 'transparent',
+                                        border: 'none',
+                                        borderLeft: isActive ? `3px solid ${cat.color}` : '3px solid transparent',
+                                        padding: '12px 16px',
+                                        borderRadius: '0 8px 8px 0',
+                                        color: isActive ? 'white' : isHovered ? '#ccc' : 'var(--text-tertiary)',
+                                        textAlign: 'left', cursor: 'pointer',
+                                        transition: 'all 0.25s ease',
+                                        boxShadow: isActive ? `inset 0 0 20px rgba(${cat.color === '#E74C3C' ? '231,76,60' : '255,255,255'},0.03)` : 'none',
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <span style={{ fontSize: '1.1rem' }}>{cat.icon}</span>
+                                        <div>
+                                            <div style={{ fontSize: '0.85rem', fontWeight: 700 }}>{cat.label}</div>
+                                            <div style={{ fontSize: '0.6rem', color: isActive ? '#888' : '#555', marginTop: '2px', lineHeight: 1.3 }}>{cat.desc}</div>
+                                        </div>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
 
                 {/* ===== WORKING AREA ===== */}
                 <div style={{ flex: 1, background: 'rgba(20, 24, 32, 0.4)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '32px', position: 'relative' }}>
 
-                    {/* Section header with reset */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '12px' }}>
-                        <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span>{activeCategory?.icon}</span> {activeCategory?.label}
-                        </h2>
-                        <Tooltip text={TOOLTIPS.reset_section} position="left">
-                            <button onClick={() => resetSection(activeTab === 'RACE_STRUCTURE' ? 'race_structure' : activeTab.toLowerCase())}
-                                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#888', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '1px' }}>
-                                ⟲ RESET
-                            </button>
-                        </Tooltip>
-                    </div>
+                    {/* Section header with reset (Desktop Only) */}
+                    {!isMobile && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '12px' }}>
+                            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span>{activeCategory?.icon}</span> {activeCategory?.label}
+                            </h2>
+                            <Tooltip text={TOOLTIPS.reset_section} position="left">
+                                <button onClick={() => resetSection(activeTab === 'RACE_STRUCTURE' ? 'race_structure' : activeTab.toLowerCase())}
+                                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#888', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '1px' }}>
+                                    ⟲ RESET
+                                </button>
+                            </Tooltip>
+                        </div>
+                    )}
 
                     {/* ===== RACE STRUCTURE ===== */}
                     {activeTab === 'RACE_STRUCTURE' && (
-                        <div>
+                        <div style={{ marginBottom: isMobile ? '40px' : '0' }}>
+                            {isMobile && <h2 style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '16px' }}>🏁 Race Structure</h2>}
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '32px' }}>
                                 <div>
                                     <Tooltip text={TOOLTIPS.track_selection} position="bottom"><label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', cursor: 'help', borderBottom: '1px dotted rgba(255,255,255,0.2)', width: 'fit-content' }}>Track Selection</label></Tooltip>
@@ -515,9 +609,62 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
                                 <span style={{ fontSize: '0.65rem', color: '#666', fontFamily: 'var(--font-mono)' }}>{config.race_structure.grid.length} drivers</span>
                             </h3>
                             <div style={{ background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '8px' }}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                                    <Tooltip text={TOOLTIPS.grid_shuffle} position="top"><button onClick={handleShuffleGrid} style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#ddd', borderRadius: '6px', cursor: 'pointer', fontSize: '0.68rem', fontWeight: 700 }}>🔀 SHUFFLE</button></Tooltip>
+                                    <Tooltip text={TOOLTIPS.grid_reverse} position="top"><button onClick={handleReverseGrid} style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#ddd', borderRadius: '6px', cursor: 'pointer', fontSize: '0.68rem', fontWeight: 700 }}>↕ REVERSE</button></Tooltip>
+                                    <Tooltip text={TOOLTIPS.grid_random_tires} position="top"><button onClick={handleRandomizeCompounds} style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: '#ddd', borderRadius: '6px', cursor: 'pointer', fontSize: '0.68rem', fontWeight: 700 }}>🛞 RANDOM TIRES</button></Tooltip>
+                                    <Tooltip text={TOOLTIPS.grid_reset} position="top"><button onClick={handleResetGrid} style={{ padding: '6px 10px', background: 'rgba(225,6,0,0.08)', border: '1px solid rgba(225,6,0,0.2)', color: '#ff6666', borderRadius: '6px', cursor: 'pointer', fontSize: '0.68rem', fontWeight: 700 }}>⟲ RESET GRID</button></Tooltip>
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', padding: '8px', border: '1px dashed rgba(255,255,255,0.15)', borderRadius: '6px' }}>
+                                    <Tooltip text={TOOLTIPS.move_to_position} position="top">
+                                        <span style={{ fontSize: '0.68rem', color: '#aaa', fontWeight: 700, letterSpacing: '0.5px' }}>QUICK MOVE</span>
+                                    </Tooltip>
+                                    <select value={gridMoveDriver} onChange={(e) => setGridMoveDriver(e.target.value)}
+                                        style={{ minWidth: '110px', padding: '6px 8px', background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.15)', color: 'white', borderRadius: '4px', fontSize: '0.75rem' }}>
+                                        {config.race_structure.grid.map(c => <option key={c.driver} value={c.driver}>{c.driver}</option>)}
+                                    </select>
+                                    <span style={{ fontSize: '0.72rem', color: '#888' }}>to P</span>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={config.race_structure.grid.length}
+                                        value={gridMovePosition}
+                                        onChange={(e) => setGridMovePosition(clampGridPosition(parseInt(e.target.value || '1', 10)))}
+                                        style={{ width: '62px', padding: '6px 8px', background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.15)', color: 'white', borderRadius: '4px', fontSize: '0.75rem' }}
+                                    />
+                                    <button onClick={() => moveDriverToPosition(gridMoveDriver, gridMovePosition)}
+                                        style={{ padding: '6px 12px', background: 'var(--cyan)', border: 'none', color: '#000', borderRadius: '4px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}>
+                                        MOVE
+                                    </button>
+                                </div>
                                 <div style={{ maxHeight: '350px', overflowY: 'auto', paddingRight: '8px' }}>
                                     {config.race_structure.grid.map((car, idx) => (
-                                        <div key={car.driver} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px', paddingBottom: '6px', borderBottom: idx < config.race_structure.grid.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                                        <div
+                                            key={car.driver}
+                                            draggable
+                                            onDragStart={() => handleDragStartGridRow(idx)}
+                                            onDragOver={(event) => handleDragOverGridRow(event, idx)}
+                                            onDrop={(event) => handleDropGridRow(event, idx)}
+                                            onDragEnd={handleDragEndGridRow}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '12px',
+                                                marginBottom: '6px',
+                                                paddingBottom: '6px',
+                                                borderBottom: idx < config.race_structure.grid.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                                                cursor: 'grab',
+                                                borderRadius: '6px',
+                                                background: dragOverGridIndex === idx ? 'rgba(100,196,255,0.12)' : 'transparent',
+                                                outline: dragOverGridIndex === idx ? '1px dashed rgba(100,196,255,0.45)' : 'none',
+                                                opacity: draggedGridIndex === idx ? 0.6 : 1,
+                                                transform: dragOverGridIndex === idx ? 'scale(1.01)' : 'scale(1)',
+                                                transition: 'background 0.15s ease, outline 0.15s ease, transform 0.15s ease'
+                                            }}
+                                        >
+                                            <Tooltip text={TOOLTIPS.drag_driver} position="right">
+                                                <span style={{ color: '#666', fontSize: '0.78rem', userSelect: 'none' }}>⋮⋮</span>
+                                            </Tooltip>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
                                                 <Tooltip text={TOOLTIPS.move_up} position="right"><button onClick={() => handleMoveCarUp(idx)} disabled={idx === 0} style={{ padding: '0 4px', background: 'transparent', border: 'none', color: idx === 0 ? '#333' : '#666', cursor: idx === 0 ? 'not-allowed' : 'pointer', fontSize: '0.7rem' }}>▲</button></Tooltip>
                                                 <Tooltip text={TOOLTIPS.move_down} position="right"><button onClick={() => handleMoveCarDown(idx)} disabled={idx === config.race_structure.grid.length - 1} style={{ padding: '0 4px', background: 'transparent', border: 'none', color: idx === config.race_structure.grid.length - 1 ? '#333' : '#666', cursor: idx === config.race_structure.grid.length - 1 ? 'not-allowed' : 'pointer', fontSize: '0.7rem' }}>▼</button></Tooltip>
@@ -550,31 +697,10 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
                         </div>
                     )}
 
-                    {/* ===== CHAOS ENGINE ===== */}
-                    {activeTab === 'CHAOS' && (
-                        <div>
-                            <ChaosGauge value={livePreview.chaosIndex} />
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginTop: '16px' }}>
-                                <SliderWithDelta label="Incident Frequency" value={config.chaos.incident_frequency} min={0} max={3} step={0.1} accentColor="#E74C3C" impact={IMPACT.incident_frequency} tooltip={TOOLTIPS.incident_frequency}
-                                    onChange={(e) => updateNestedConfig('chaos', 'incident_frequency', parseFloat(e.target.value))} />
-                                <SliderWithDelta label="Safety Car Probability" value={config.chaos.safety_car_probability} min={0} max={3} step={0.1} accentColor="#E74C3C" impact={IMPACT.safety_car_probability} tooltip={TOOLTIPS.safety_car_probability}
-                                    onChange={(e) => updateNestedConfig('chaos', 'safety_car_probability', parseFloat(e.target.value))} />
-                                <SliderWithDelta label="Mechanical Randomness" value={config.chaos.mechanical_randomness} min={0} max={3} step={0.1} accentColor="#E74C3C" impact={IMPACT.mechanical_randomness} tooltip={TOOLTIPS.mechanical_randomness}
-                                    onChange={(e) => updateNestedConfig('chaos', 'mechanical_randomness', parseFloat(e.target.value))} />
-                                <SliderWithDelta label="AI Irrationality" value={config.chaos.ai_irrationality} min={0} max={3} step={0.1} accentColor="#E74C3C" impact={IMPACT.ai_irrationality} tooltip={TOOLTIPS.ai_irrationality}
-                                    onChange={(e) => updateNestedConfig('chaos', 'ai_irrationality', parseFloat(e.target.value))} />
-                                <div>
-                                    <label style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: 'var(--text-secondary)' }}><span>Random Seed</span></label>
-                                    <input type="number" value={config.seed} onChange={(e) => setConfig(prev => ({ ...prev, seed: parseInt(e.target.value) }))}
-                                        style={{ width: '100px', padding: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '4px' }} />
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                     {/* ===== WEATHER ===== */}
                     {activeTab === 'WEATHER' && (
-                        <div>
+                        <div style={{ marginBottom: isMobile ? '40px' : '0' }}>
+                            {isMobile && <h2 style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '16px', marginTop: '20px' }}>🌦️ Weather Timeline</h2>}
                             <WeatherTimeline
                                 totalLaps={config.race_structure.total_laps}
                                 rainStartLap={config.weather.timeline[0].start_lap}
@@ -594,7 +720,8 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
 
                     {/* ===== ENGINEERING ===== */}
                     {activeTab === 'ENGINEERING' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginBottom: isMobile ? '40px' : '0' }}>
+                            {isMobile && <h2 style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '4px', marginTop: '20px' }}>🏎️ Car Setup</h2>}
                             {[
                                 { key: 'downforce_level', label: 'Downforce Level', color: '#3498DB' },
                                 { key: 'drag_coefficient', label: 'Drag Coefficient', color: '#2ECC71' },
@@ -608,13 +735,38 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
 
                     {/* ===== TEAMS ===== */}
                     {activeTab === 'TEAMS' && (
-                        <div>
+                        <div style={{ marginBottom: isMobile ? '40px' : '0' }}>
+                            {isMobile && <h2 style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '16px', marginTop: '20px' }}>⚙️ Team Ratings</h2>}
                             <div style={{ marginBottom: '24px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>Select Team</label>
-                                <select value={selectedTeamForEdit} onChange={(e) => setSelectedTeamForEdit(e.target.value)}
-                                    style={{ width: '100%', padding: '10px', background: 'rgba(0,0,0,0.3)', border: `1px solid ${TEAM_COLORS[selectedTeamForEdit] || '#333'}40`, color: 'white', borderRadius: '4px' }}>
-                                    {[...new Set(config.race_structure.grid.map(c => c.team))].map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
+                                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Select Team</label>
+                                {isMobile ? (
+                                    <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none' }} className="no-scrollbar">
+                                        {[...new Set(config.race_structure.grid.map(c => c.team))].map(t => (
+                                            <button
+                                                key={t}
+                                                onClick={() => setSelectedTeamForEdit(t)}
+                                                style={{
+                                                    background: selectedTeamForEdit === t ? (TEAM_COLORS[t] || '#333') : 'rgba(255,255,255,0.04)',
+                                                    border: `1px solid ${TEAM_COLORS[t] || '#333'}60`,
+                                                    color: selectedTeamForEdit === t ? 'white' : '#888',
+                                                    padding: '8px 16px',
+                                                    borderRadius: '20px',
+                                                    fontSize: '0.7rem',
+                                                    fontWeight: 700,
+                                                    whiteSpace: 'nowrap',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                {t}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <select value={selectedTeamForEdit} onChange={(e) => setSelectedTeamForEdit(e.target.value)}
+                                        style={{ width: '100%', padding: '10px', background: 'rgba(0,0,0,0.3)', border: `1px solid ${TEAM_COLORS[selectedTeamForEdit] || '#333'}40`, color: 'white', borderRadius: '4px' }}>
+                                        {[...new Set(config.race_structure.grid.map(c => c.team))].map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                )}
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                                 {[
@@ -638,13 +790,42 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
 
                     {/* ===== DRIVERS ===== */}
                     {activeTab === 'DRIVERS' && (
-                        <div>
+                        <div style={{ marginBottom: isMobile ? '40px' : '0' }}>
+                            {isMobile && <h2 style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '16px', marginTop: '20px' }}>🧠 Driver Persona</h2>}
                             <div style={{ marginBottom: '24px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>Select Driver</label>
-                                <select value={selectedDriverForEdit} onChange={(e) => setSelectedDriverForEdit(e.target.value)}
-                                    style={{ width: '100%', padding: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '4px' }}>
-                                    {config.race_structure.grid.map(c => <option key={c.driver} value={c.driver}>{c.driver} ({c.team})</option>)}
-                                </select>
+                                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Select Driver</label>
+                                {isMobile ? (
+                                    <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none' }} className="no-scrollbar">
+                                        {config.race_structure.grid.map(c => (
+                                            <button
+                                                key={c.driver}
+                                                onClick={() => setSelectedDriverForEdit(c.driver)}
+                                                style={{
+                                                    background: selectedDriverForEdit === c.driver ? 'white' : 'rgba(255,255,255,0.04)',
+                                                    border: '1px solid rgba(255,255,255,0.1)',
+                                                    color: selectedDriverForEdit === c.driver ? '#000' : '#888',
+                                                    padding: '8px 16px',
+                                                    borderRadius: '20px',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 700,
+                                                    whiteSpace: 'nowrap',
+                                                    transition: 'all 0.2s',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px'
+                                                }}
+                                            >
+                                                <div style={{ width: '4px', height: '12px', background: TEAM_COLORS[c.team] || '#555', borderRadius: '1px' }} />
+                                                {c.driver}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <select value={selectedDriverForEdit} onChange={(e) => setSelectedDriverForEdit(e.target.value)}
+                                        style={{ width: '100%', padding: '10px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '4px' }}>
+                                        {config.race_structure.grid.map(c => <option key={c.driver} value={c.driver}>{c.driver} ({c.team})</option>)}
+                                    </select>
+                                )}
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                                 {[
@@ -663,6 +844,29 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
                                             }} />
                                     );
                                 })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ===== CHAOS ENGINE (Moved to Bottom) ===== */}
+                    {activeTab === 'CHAOS' && (
+                        <div style={{ marginBottom: isMobile ? '40px' : '0' }}>
+                            {isMobile && <h2 style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '16px', marginTop: '20px' }}>🎲 Chaos Engine</h2>}
+                            <ChaosGauge value={chaosIndex} />
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginTop: '16px' }}>
+                                <SliderWithDelta label="Incident Frequency" value={config.chaos.incident_frequency} min={0} max={3} step={0.1} accentColor="#E74C3C" impact={IMPACT.incident_frequency} tooltip={TOOLTIPS.incident_frequency}
+                                    onChange={(e) => updateNestedConfig('chaos', 'incident_frequency', parseFloat(e.target.value))} />
+                                <SliderWithDelta label="Safety Car Probability" value={config.chaos.safety_car_probability} min={0} max={3} step={0.1} accentColor="#E74C3C" impact={IMPACT.safety_car_probability} tooltip={TOOLTIPS.safety_car_probability}
+                                    onChange={(e) => updateNestedConfig('chaos', 'safety_car_probability', parseFloat(e.target.value))} />
+                                <SliderWithDelta label="Mechanical Randomness" value={config.chaos.mechanical_randomness} min={0} max={3} step={0.1} accentColor="#E74C3C" impact={IMPACT.mechanical_randomness} tooltip={TOOLTIPS.mechanical_randomness}
+                                    onChange={(e) => updateNestedConfig('chaos', 'mechanical_randomness', parseFloat(e.target.value))} />
+                                <SliderWithDelta label="AI Irrationality" value={config.chaos.ai_irrationality} min={0} max={3} step={0.1} accentColor="#E74C3C" impact={IMPACT.ai_irrationality} tooltip={TOOLTIPS.ai_irrationality}
+                                    onChange={(e) => updateNestedConfig('chaos', 'ai_irrationality', parseFloat(e.target.value))} />
+                                <div>
+                                    <label style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: 'var(--text-secondary)' }}><span>Random Seed</span></label>
+                                    <input type="number" value={config.seed} onChange={(e) => setConfig(prev => ({ ...prev, seed: parseInt(e.target.value) }))}
+                                        style={{ width: '100px', padding: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '4px' }} />
+                                </div>
                             </div>
                         </div>
                     )}

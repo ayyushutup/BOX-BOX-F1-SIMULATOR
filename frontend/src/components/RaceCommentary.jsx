@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const RaceCommentary = ({ commentary, reasoningTree, mode = 'standard', intensity = 'cinematic_high', onModeChange, onIntensityChange, disabled }) => {
+const RaceCommentary = ({ commentary, reasoningTree }) => {
 
     const [showReasoning, setShowReasoning] = useState(false);
 
@@ -83,7 +83,7 @@ const RaceCommentary = ({ commentary, reasoningTree, mode = 'standard', intensit
                 pointerEvents: 'none'
             }} />
 
-            {/* Header with Controls */}
+            {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <span style={{ fontSize: '1.4rem' }}>🎙️</span>
@@ -134,41 +134,6 @@ const RaceCommentary = ({ commentary, reasoningTree, mode = 'standard', intensit
                                 {confScore}%
                             </span>
                         </div>
-                    )}
-                </div>
-
-                {/* Commentary Mode & Tone Controls */}
-                <div style={{ display: 'flex', gap: '8px', zIndex: 10 }}>
-                    <select
-                        value={mode}
-                        onChange={e => onModeChange && onModeChange(e.target.value)}
-                        disabled={disabled}
-                        style={{
-                            background: 'rgba(0,0,0,0.5)', color: '#fff', border: '1px solid #333',
-                            borderRadius: '4px', padding: '4px 8px', fontSize: '0.7rem', outline: 'none',
-                            cursor: disabled ? 'not-allowed' : 'pointer'
-                        }}
-                    >
-                        <option value="standard">Analyst Mode</option>
-                        <option value="cinematic">Cinematic Mode</option>
-                    </select>
-
-                    {mode === 'cinematic' && (
-                        <select
-                            value={intensity}
-                            onChange={e => onIntensityChange && onIntensityChange(e.target.value)}
-                            disabled={disabled}
-                            style={{
-                                background: 'rgba(0,0,0,0.5)', color: '#fff', border: '1px solid #333',
-                                borderRadius: '4px', padding: '4px 8px', fontSize: '0.7rem', outline: 'none',
-                                cursor: disabled ? 'not-allowed' : 'pointer'
-                            }}
-                        >
-                            <option value="cinematic_high">High Drama</option>
-                            <option value="cinematic_low">Low Drama</option>
-                            <option value="documentary">Documentary</option>
-                            <option value="technical">Technical</option>
-                        </select>
                     )}
                 </div>
             </div>

@@ -23,14 +23,23 @@ const TEAM_COLORS = {
 };
 
 const FinishDistributionChart = ({ predictions, baselinePredictions, selectedDriver }) => {
-    const [compareMode, setCompareMode] = useState(true);
+    const [isMobile, setIsMobile] = useState(false);
+
+    React.useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
 
     if (!selectedDriver) return null;
 
     // Use backend distribution if available
     const data = [];
     const dist = predictions?.position_distributions?.[selectedDriver] || {};
-    const baseDist = baselinePredictions?.position_distributions?.[selectedDriver] || {};
+    const baselineDistRaw = baselinePredictions?.position_distributions?.[selectedDriver] || {};
+    const hasBaseline = Object.keys(baselineDistRaw).length > 0;
+    const baseDist = hasBaseline ? baselineDistRaw : dist;
 
     // We want to graph P1 through P20 for a full curve
     let modEV = 0;
@@ -85,7 +94,7 @@ const FinishDistributionChart = ({ predictions, baselinePredictions, selectedDri
         modEV = 3.2; baseEV = 3.5; modePos = 3; medianPos = 3;
     }
 
-    const isComparing = compareMode && baselinePredictions !== null;
+    const isComparing = true;
     const deltaEV = modEV - baseEV; // negative is better (lower position)
 
     const CustomTooltip = ({ active, payload, label }) => {
@@ -101,7 +110,7 @@ const FinishDistributionChart = ({ predictions, baselinePredictions, selectedDri
                                 {point.probability}%
                             </span>
                         </div>
-                        {isComparing && (
+                        {hasBaseline && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', minWidth: '120px' }}>
                                 <span style={{ fontSize: '0.8rem', color: '#1C5B8A' }}>Baseline:</span>
                                 <span style={{ fontSize: '0.9rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#ccc' }}>
@@ -109,7 +118,7 @@ const FinishDistributionChart = ({ predictions, baselinePredictions, selectedDri
                                 </span>
                             </div>
                         )}
-                        {isComparing && (
+                        {hasBaseline && (
                             <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px dashed #444', textAlign: 'right', fontSize: '0.75rem', color: (point.probability - point.baselineProb) > 0 ? 'var(--green)' : 'var(--red)' }}>
                                 {((point.probability - point.baselineProb) > 0 ? '+' : '')}{(point.probability - point.baselineProb).toFixed(1)}% Δ
                             </div>
@@ -122,7 +131,7 @@ const FinishDistributionChart = ({ predictions, baselinePredictions, selectedDri
     }
 
     return (
-        <div className="chart-widget hover-elevate" style={{ minHeight: '340px', flex: 1, borderTop: `2px solid ${TEAM_COLORS[selectedDriver] || 'var(--purple)'}` }}>
+        <div className="chart-widget hover-elevate" style={{ minHeight: isMobile ? '430px' : '340px', flex: 1, borderTop: `2px solid ${TEAM_COLORS[selectedDriver] || 'var(--purple)'}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                 <div>
                     <h2 className="panel-title" style={{ marginBottom: '4px', color: TEAM_COLORS[selectedDriver] || 'var(--purple)' }}>FINISH DISTRIBUTION SPREAD</h2>
@@ -151,24 +160,12 @@ const FinishDistributionChart = ({ predictions, baselinePredictions, selectedDri
                     </div>
                 </div>
 
-                {/* Mode Toggle */}
-                <div style={{ display: 'flex', background: 'rgba(0,0,0,0.5)', borderRadius: '4px', border: '1px solid #333', overflow: 'hidden' }}>
-                    <button
-                        onClick={() => setCompareMode(false)}
-                        style={{ padding: '4px 8px', fontSize: '0.65rem', fontWeight: 700, border: 'none', background: !compareMode ? (TEAM_COLORS[selectedDriver] || 'var(--purple)') : 'transparent', color: !compareMode ? '#000' : '#888', cursor: 'pointer' }}
-                    >
-                        SNAPSHOT
-                    </button>
-                    <button
-                        onClick={() => setCompareMode(true)}
-                        style={{ padding: '4px 8px', fontSize: '0.65rem', fontWeight: 700, border: 'none', borderLeft: '1px solid #333', background: compareMode ? (TEAM_COLORS[selectedDriver] || 'var(--purple)') : 'transparent', color: compareMode ? '#000' : '#888', cursor: 'pointer' }}
-                    >
-                        COMPARE
-                    </button>
+                <div style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #333', background: 'rgba(0,0,0,0.5)', fontSize: '0.65rem', fontWeight: 700, color: TEAM_COLORS[selectedDriver] || 'var(--purple)' }}>
+                    {hasBaseline ? 'COMPARE' : 'COMPARE (SYNCED BASE)'}
                 </div>
             </div>
 
-            <div style={{ flex: 1, minHeight: 0, width: '100%', position: 'relative' }}>
+            <div style={{ flex: 1, minHeight: isMobile ? '320px' : 0, height: isMobile ? '320px' : '100%', width: '100%', position: 'relative' }}>
                 <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <defs>
@@ -216,10 +213,17 @@ const FinishDistributionChart = ({ predictions, baselinePredictions, selectedDri
                         )}
                         <ReferenceLine x={`P${Math.round(modEV)}`} stroke="#fff" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'EV', fill: '#fff', fontSize: 10 }} />
 
-                        {isComparing && (
-                            <Area type="monotone" dataKey="baselineProb" stroke="#1C5B8A" strokeWidth={2} fillOpacity={1} fill="url(#colorBaseline)" animationDuration={800} />
-                        )}
                         <Area type="monotone" dataKey="probability" stroke={TEAM_COLORS[selectedDriver] || 'var(--purple)'} strokeWidth={3} fillOpacity={1} fill="url(#colorModified)" animationDuration={800} />
+                        <Area
+                            type="monotone"
+                            dataKey="baselineProb"
+                            stroke="#7fb8ff"
+                            strokeWidth={2.5}
+                            strokeDasharray="6 4"
+                            fillOpacity={0}
+                            fill="transparent"
+                            animationDuration={800}
+                        />
                     </AreaChart>
                 </ResponsiveContainer>
             </div>

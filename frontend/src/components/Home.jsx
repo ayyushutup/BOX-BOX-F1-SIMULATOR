@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ArchitectureFlow from './ArchitectureFlow';
 import car1 from '../assets/cars/ferrari_new.png';
 import car2 from '../assets/cars/mclaren_new.png';
 import car3 from '../assets/cars/mercedes_new.png';
@@ -7,7 +8,6 @@ import car5 from '../assets/cars/williams_new.png';
 import car6 from '../assets/cars/redbull_new.png';
 import car7 from '../assets/cars/audi_new.png';
 import car8 from '../assets/cars/vcarb_new.png';
-import helmetBg from '../assets/vintage_helmet.jpg';
 
 const TEAMS = [
     {
@@ -127,6 +127,7 @@ const TEAMS = [
 const Home = ({ onNavigate }) => {
     const [activeTeamIndex, setActiveTeamIndex] = useState(0);
     const [autoPlay, setAutoPlay] = useState(true);
+    const [activeInfoPanel, setActiveInfoPanel] = useState('what');
 
     useEffect(() => {
         let interval;
@@ -140,30 +141,7 @@ const Home = ({ onNavigate }) => {
         return () => clearInterval(interval);
     }, [autoPlay]);
 
-    // Scroll Reveal Effect
-    useEffect(() => {
-        const reveals = document.querySelectorAll('.reveal');
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('active');
-                }
-            });
-        }, { threshold: 0.2 });
-
-        reveals.forEach(r => observer.observe(r));
-
-        return () => {
-            reveals.forEach(r => observer.unobserve(r));
-        };
-    }, []);
-
     const activeTeam = TEAMS[activeTeamIndex];
-
-    const handleTeamSelect = (index) => {
-        setActiveTeamIndex(index);
-        setAutoPlay(false); // Stop auto-play when user interacts manually
-    };
 
     return (
         <div
@@ -193,8 +171,8 @@ const Home = ({ onNavigate }) => {
                         <span className="accent-text hero-title-accent" data-text="UNPREDICTABLE">UNPREDICTABLE</span>
                     </h1>
                     <p className="hero-description">
-                        AI-powered 2026 Formula 1 race prediction engine.<br />
-                        Real telemetry. Dynamic chaos modeling. Strategic probability shifts.
+                        Configure race conditions, weather phases, and team modifiers.<br />
+                        Run Monte Carlo predictions to compare standings, finish spread, and strategy impact.
                     </p>
                     <div className="hero-actions">
                         <button
@@ -219,61 +197,69 @@ const Home = ({ onNavigate }) => {
                 </div>
             </div>
 
-            {/* WHAT IS BOX BOX? - Explanation Section (Below Fold) */}
-            <div className="platform-explanation">
-                {/* Cinematic Background Visual Anchor */}
-                <div className="explanation-visual-anchor"></div>
-
-                <div className="explanation-content">
-                    <h2 className="explanation-title heading-underline">
-                        <span className="icon">🔬</span> WHAT IS BOX BOX?
-                    </h2>
-
-                    <p className="explanation-lead">
-                        Box Box is a custom-built Formula 1 simulation engine that:
-                    </p>
-
-                    <div className="explanation-features-grid">
-                        <div className="column-left reveal">
-                            <div className="feature-item tech-card">
-                                <div className="feature-icon">⚡</div>
-                                <div className="feature-text">
-                                    <strong>Stochastic Monte Carlo Engine</strong>
-                                    By continuously running 100,000+ probabilistic race simulations per second, the engine maps out every possible timeline. It calculates real-time win probabilities, podium chances, and position distributions by dynamically modeling lap times, tire degradation curves, and individual driver consistencies instead of relying on static averages.
-                                </div>
-                            </div>
-                            <div className="feature-item tech-card">
-                                <div className="feature-icon">🌦</div>
-                                <div className="feature-text">
-                                    <strong>Dynamic Chaos & Volatility Modeling</strong>
-                                    Racing isn't conducted in a vacuum. The engine actively models dynamic race chaos, injecting unpredictable variables like sudden Safety Cars, flash rain storms, and abrupt tire degradation cliffs. Our volatility index measures how mathematically sensitive current standings are to these chaotic events triggering.
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="column-right reveal">
-                            <div className="feature-item tech-card">
-                                <div className="feature-icon">🧠</div>
-                                <div className="feature-text">
-                                    <strong>Reinforcement Learning Strategy Agents</strong>
-                                    Instead of hard-coded heuristics, Box Box utilizes active Reinforcement Learning (PPO) models to predict intelligent pit strategies. Each AI agent acts autonomously during the race, optimizing tire choices and push/save pacing based on unique driver personalities—weighing overtakes against tire preservation and risk tolerance.
-                                </div>
-                            </div>
-                            <div className="feature-item tech-card">
-                                <div className="feature-icon">📊</div>
-                                <div className="feature-text">
-                                    <strong>Causal Linkage & Telemetry Fusion</strong>
-                                    Integrating real-world telemetry parameters with LightGBM foundational models, the system precisely understands why drivers perform differently. It doesn't just predict the outcome; it exposes the causal variables—such as dirty air penalty, fuel load, and compound transitions—driving the race's evolution.
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <p className="explanation-footer">
-                        Designed to model the upcoming 2026 regulations and test the limits of what AI can predict on the grid.
-                    </p>
+            <div className="home-info-section">
+                <h2 className="home-info-heading">SYSTEM OVERVIEW</h2>
+                <div className="home-info-actions">
+                    <button
+                        className={`home-info-button ${activeInfoPanel === 'what' ? 'active' : ''}`}
+                        onClick={() => setActiveInfoPanel('what')}
+                        type="button"
+                    >
+                        <span className="home-info-icon" aria-hidden="true">🏁</span>
+                        <span>What is Box Box?</span>
+                    </button>
+                    <button
+                        className={`home-info-button ${activeInfoPanel === 'how' ? 'active' : ''}`}
+                        onClick={() => setActiveInfoPanel('how')}
+                        type="button"
+                    >
+                        <span className="home-info-icon" aria-hidden="true">⚙️</span>
+                        <span>How it Works</span>
+                    </button>
                 </div>
+
+                {activeInfoPanel === 'what' ? (
+                    <div className="home-info-panel">
+                        <p>
+                            Box Box is a race simulation lab for F1 fans, analysts, and strategy nerds who like to ask:
+                            "What happens if this race turns chaotic on lap 23?"
+                        </p>
+                        <p>
+                            You configure weather windows, race structure, and team/driver modifiers, then the engine
+                            runs large Monte Carlo batches to project outcomes instead of guessing from one timeline.
+                        </p>
+                        <p>
+                            The output is probability-first: projected final standings, finish position spread, and
+                            strategy impact under different conditions. So it is less "trust me bro" and more
+                            "here are 500 alternate universes and receipts."
+                        </p>
+                        <p>
+                            Think of it as your virtual pit wall: slightly dramatic, highly opinionated, and usually
+                            faster than waiting for real team radio to explain why Plan A became Plan Z.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="home-info-panel" style={{ padding: 0, background: 'transparent', border: 'none', boxShadow: 'none' }}>
+                        <ArchitectureFlow />
+                    </div>
+                )}
             </div>
+
+            <footer className="home-page-footer">
+                <div className="home-page-footer-grid">
+                    <div className="home-footer-brand">
+                        <div className="home-footer-logo">BOX BOX</div>
+                        <p>Scenario-first F1 race simulation platform.</p>
+                    </div>
+                    <div className="home-footer-note">
+                        <p>Built for race strategy testing, uncertainty modeling, and controlled chaos.</p>
+                        <span>© {new Date().getFullYear()} BOX BOX Simulator</span>
+                        <p style={{ marginTop: '8px', fontSize: '0.85rem' }}>
+                            Created by <a href="https://github.com/ayyushutup" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--cyan)', textDecoration: 'none' }}>Ayush R Thakur</a>
+                        </p>
+                    </div>
+                </div>
+            </footer>
 
         </div>
     );

@@ -1,12 +1,15 @@
-
 import joblib
 import numpy as np
 import pandas as pd
 import os
+import logging
 from typing import Dict, List, Optional
 from app.models.race_state import RaceState, RaceControl
 from app.ml.monte_carlo import MonteCarloRaceSimulator
 from app.ml.rl_predictor import RLDriverPredictor
+from app.ml.strategy_optimizer import StrategyOptimizer
+from app.ml.state_estimator import RaceStateAssimilator
+from app.ml.timeline_simulator import TimelineSimulator
 from app.simulation.physics import (
     calculate_dirty_air_factor, calculate_dirty_air_mistake_effect,
     calculate_track_grip, update_rubber_level,
@@ -15,6 +18,7 @@ from app.simulation.physics import (
 
 # Configuration
 MODEL_DIR = "app/ml/models"
+logger = logging.getLogger("boxbox.predictor")
 
 class RacePredictor:
     _instance = None
@@ -29,8 +33,11 @@ class RacePredictor:
         if not self.initialized:
             self.win_model = None
             self.podium_model = None
-            self.mc_simulator = MonteCarloRaceSimulator(n_simulations=1000)
+            self.mc_simulator = MonteCarloRaceSimulator(n_simulations=500)
             self.rl_predictor = RLDriverPredictor()
+            self.strategy_optimizer = StrategyOptimizer()
+            self.state_assimilator = RaceStateAssimilator()
+            self.timeline_simulator = TimelineSimulator(n_simulations=50)
             self.load_models()
             self.initialized = True
             
@@ -70,7 +77,7 @@ class RacePredictor:
             print(f"Failed to load ML models: {e}")
             print("Predictions will be unavailable.")
 
-    def predict(self, state: RaceState, scenario_config=None) -> Dict:
+    def predict(self, state: RaceState, scenario_config=None, prediction_tier: str = "full") -> Dict:
         """
         Bayesian Prediction Pipeline:
         
@@ -82,8 +89,35 @@ class RacePredictor:
         if not self.win_model or not self.podium_model:
             return None
 
+        if not state.cars:
+            raise ValueError("Race grid cannot be empty.")
+
+        tier = prediction_tier if prediction_tier in {"preview", "full"} else "full"
+        mc_simulations = 80 if tier == "preview" else 500
+        timeline_simulations = 10 if tier == "preview" else 50
+        # Heavyest stage: keep full optimization focused on top contenders.
+        strategy_cars_limit = 2 if tier == "preview" else 3
+
         data = []
         total_laps = state.meta.laps_total
+        
+        # =================================================================
+        # STAGE 0: DATA ASSIMILATION — Kalman Filter State Correction
+        # =================================================================
+        sc_active = state.race_control == RaceControl.SAFETY_CAR if hasattr(state, 'race_control') else False
+        track_temp = state.track.weather.temperature if state.track and hasattr(state.track, 'weather') else 30.0
+        
+        try:
+            self.state_assimilator.assimilate(
+                cars=state.cars,
+                track_temp=track_temp,
+                sc_active=sc_active,
+            )
+        except Exception as exc:
+            logger.warning("State assimilation failed; continuing without correction: %s", exc)
+        
+        corrected_states = self.state_assimilator.get_corrected_states()
+        pace_corrections = self.state_assimilator.get_pace_corrections()
         
         for car in state.cars:
             gap_leader = car.timing.gap_to_leader if car.timing.gap_to_leader is not None else 0.0
@@ -210,6 +244,13 @@ class RacePredictor:
             skill_bonus = max(0.5, car.driver_skill / 0.90)
             skill_term = 0.3 * np.log(skill_bonus)
             
+            # --- Kalman pace correction term ---
+            kalman_term = 0.0
+            driver_pace_corr = pace_corrections.get(car.identity.driver, 0.0)
+            if abs(driver_pace_corr) > 0.05:
+                # Negative pace_offset = faster than expected → boost
+                kalman_term = np.log(max(0.5, 1.0 - driver_pace_corr * 0.1))
+            
             # --- RL term: Personality-driven behavioral signal ---
             personality = {'aggression': 0.5, 'consistency': 0.5, 'wet_skill': 0.5, 'tire_management': 0.5, 'risk_tolerance': 0.5}
             if scenario_config:
@@ -289,10 +330,11 @@ class RacePredictor:
             # COMPOSE: logit(posterior) = logit(prior) + Σ likelihood terms
             # =================================================================
             logit_win += (chaos_term + tire_term + rain_term + skill_term + rl_term 
-                         + quali_term + dirty_air_term + track_grip_term + momentum_term + championship_term)
+                         + quali_term + dirty_air_term + track_grip_term + momentum_term 
+                         + championship_term + kalman_term)
             logit_podium += (chaos_term * 0.7 + tire_term + rain_term + skill_term * 0.6 + rl_term * 0.8 
                            + quali_term * 0.7 + dirty_air_term * 0.8 + track_grip_term * 0.8 
-                           + momentum_term * 0.7 + championship_term * 0.6)
+                           + momentum_term * 0.7 + championship_term * 0.6 + kalman_term * 0.8)
             
             # Convert back to probability via sigmoid
             p_win = 1.0 / (1.0 + np.exp(-logit_win))
@@ -453,9 +495,38 @@ class RacePredictor:
         # Track SC probability
         track_sc_prob = state.track.sc_probability / 100.0 if state.track.sc_probability else 0.2
         
+        # Build interaction graph inputs from live race state
+        driver_gaps = {}
+        tire_deltas = {}
+        driver_personalities = {}
+        sorted_cars = sorted(state.cars, key=lambda c: c.timing.position)
+        
+        for idx, car in enumerate(sorted_cars):
+            d = car.identity.driver
+            # Gap to car ahead
+            gap = car.timing.interval if car.timing.interval is not None else 2.0
+            driver_gaps[d] = abs(gap)
+            
+            # Tire pace delta vs car ahead (positive = follower has fresher tires)
+            if idx > 0:
+                leader_car = sorted_cars[idx - 1]
+                tire_deltas[d] = leader_car.telemetry.tire_state.wear - car.telemetry.tire_state.wear
+            
+            # Personality (use scenario config if available, else defaults)
+            personality = {'aggression': 0.5, 'consistency': 0.5}
+            if scenario_config:
+                driver_cfg = scenario_config.drivers.get(d)
+                if driver_cfg:
+                    personality = {
+                        'aggression': getattr(driver_cfg, 'aggression', 0.5),
+                        'consistency': 1.0 - getattr(driver_cfg, 'radio_emotionality', 0.5) * 0.5,
+                    }
+            driver_personalities[d] = personality
+        
         mc_results = self.mc_simulator.simulate(
             win_probs=win_prob_dict,
             podium_probs=podium_prob_dict,
+            n_simulations=mc_simulations,
             chaos_level=chaos_level,
             incident_frequency=chaos_multiplier,
             rl_signals=rl_signals_dict,
@@ -463,9 +534,86 @@ class RacePredictor:
             chaos_scaling=chaos_scaling,
             championship_data=championship_data,
             track_sc_probability=track_sc_prob,
+            driver_gaps=driver_gaps,
+            tire_deltas=tire_deltas,
+            driver_personalities=driver_personalities,
+            track_info={
+                'id': state.track.id if state.track else '',
+                'expected_overtakes': state.track.expected_overtakes if state.track else 0,
+                'is_street_circuit': state.track.is_street_circuit if state.track else False,
+            },
         )
 
+        # =================================================================
+        # STAGE 5: Strategy Optimization (per-car)
+        # =================================================================
+        strategy_recommendations = {}
+        # Run strategy optimization for top cars (performance-limited)
+        for car in sorted_cars[:strategy_cars_limit]:
+            d = car.identity.driver
+            abrasion_map = {"LOW": 0.5, "MEDIUM": 1.0, "HIGH": 1.5}
+            t_abrasiveness = abrasion_map.get(state.track.abrasion, 1.0) if state.track else 1.0
+            t_temp = (state.track.weather.temperature + 10.0) if state.track and hasattr(state.track.weather, 'temperature') else 35.0
+            push = 0.5 + (driver_personalities.get(d, {}).get('aggression', 0.5) * 0.5)
+            
+            try:
+                strat = self.strategy_optimizer.optimize(
+                    current_lap=car.timing.lap,
+                    total_laps=total_laps,
+                    current_compound=car.telemetry.tire_state.compound.value if hasattr(car.telemetry.tire_state.compound, 'value') else str(car.telemetry.tire_state.compound),
+                    current_wear=car.telemetry.tire_state.wear,
+                    current_temp=getattr(car.telemetry.tire_state, 'temperature', 90.0),
+                    track_temp=t_temp,
+                    track_abrasiveness=t_abrasiveness,
+                    pit_stop_loss=state.track.pit_stop_loss if state.track else 22.0,
+                    driver_push_level=push,
+                    position=car.timing.position,
+                )
+                strategy_recommendations[d] = strat
+            except Exception as exc:
+                logger.warning("Strategy optimization failed for %s: %s", d, exc)
+
+        # =================================================================
+        # STAGE 6: Timeline Forecast
+        # =================================================================
+        timeline_forecast = {}
+        try:
+            tl_positions = [c.identity.driver for c in sorted_cars]
+            tl_gaps = {c.identity.driver: abs(c.timing.interval or 1.5) for c in sorted_cars}
+            tl_compounds = {
+                c.identity.driver: (c.telemetry.tire_state.compound.value
+                    if hasattr(c.telemetry.tire_state.compound, 'value')
+                    else str(c.telemetry.tire_state.compound))
+                for c in sorted_cars
+            }
+            tl_wears = {c.identity.driver: c.telemetry.tire_state.wear for c in sorted_cars}
+            tl_temps = {c.identity.driver: getattr(c.telemetry.tire_state, 'temperature', 90.0) for c in sorted_cars}
+            tl_fuels = {c.identity.driver: c.telemetry.fuel for c in sorted_cars}
+            t_abrasiveness = abrasion_map.get(state.track.abrasion, 1.0) if state.track else 1.0
+            t_temp_tl = (state.track.weather.temperature + 10.0) if state.track and hasattr(state.track.weather, 'temperature') else 35.0
+            sc_prob = (state.track.sc_probability / 100.0 / total_laps) if state.track and state.track.sc_probability else 0.02
+
+            timeline_forecast = self.timeline_simulator.simulate_timeline(
+                positions=tl_positions,
+                gaps=tl_gaps,
+                tire_compounds=tl_compounds,
+                tire_wears=tl_wears,
+                tire_temps=tl_temps,
+                fuel_loads=tl_fuels,
+                current_lap=state.cars[0].timing.lap,
+                total_laps=total_laps,
+                track_temp=t_temp_tl,
+                track_abrasiveness=t_abrasiveness,
+                track_id=state.track.id if state.track else '',
+                sc_probability=sc_prob,
+                pace_offsets=pace_corrections,
+                n_simulations=timeline_simulations,
+            )
+        except Exception as exc:
+            logger.warning("Timeline simulation failed; continuing without timeline_forecast: %s", exc)
+
         # Assemble full prediction response
+        abrasion_map_resp = {"LOW": 0.5, "MEDIUM": 1.0, "HIGH": 1.5}
         results = {
             "lap": state.cars[0].timing.lap,
             "win_prob": win_prob_dict,
@@ -476,7 +624,20 @@ class RacePredictor:
             "predicted_order": mc_results["predicted_order"],
             "position_distributions": mc_results["position_distributions"],
             "volatility_bands": mc_results.get("volatility_bands", {}),
-            "causal_factors": causal_factors
+            "causal_factors": causal_factors,
+            # Strategy optimization
+            "strategy_recommendations": strategy_recommendations,
+            # Data assimilation
+            "corrected_states": corrected_states,
+            "pace_corrections": pace_corrections,
+            # Timeline forecast
+            "timeline_forecast": timeline_forecast,
+            "simulation_tier": tier,
+            "simulation_meta": {
+                "mc_simulations": mc_simulations,
+                "timeline_simulations": timeline_simulations,
+                "strategy_cars_optimized": strategy_cars_limit,
+            },
         }
             
         return results

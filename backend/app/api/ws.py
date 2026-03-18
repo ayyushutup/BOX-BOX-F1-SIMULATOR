@@ -3,6 +3,7 @@ from typing import List, Dict
 import asyncio
 import redis.asyncio as redis
 import os
+import contextlib
 
 router = APIRouter()
 
@@ -82,3 +83,66 @@ async def race_websocket(websocket: WebSocket, race_id: str):
             data = await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket, race_id)
+
+
+@router.websocket("/ws/race")
+async def race_control_websocket(websocket: WebSocket):
+    """
+    Lightweight control socket kept for backwards compatibility with existing tests
+    and clients that expect init/start/pause commands.
+    """
+    await websocket.accept()
+    race_state = {
+        "track_id": "monaco",
+        "lap": 0,
+        "speed": 1.0,
+        "running": False,
+    }
+    update_task = None
+
+    async def stream_updates():
+        while race_state["running"]:
+            race_state["lap"] += 1
+            await websocket.send_json(
+                {
+                    "type": "update",
+                    "track_id": race_state["track_id"],
+                    "lap": race_state["lap"],
+                }
+            )
+            interval = max(0.03, 0.2 / max(0.1, float(race_state["speed"])))
+            await asyncio.sleep(interval)
+
+    try:
+        while True:
+            payload = await websocket.receive_json()
+            command = payload.get("command")
+
+            if command == "init":
+                race_state["track_id"] = payload.get("track_id", "monaco")
+                race_state["lap"] = 0
+                await websocket.send_json(
+                    {"type": "init", "track_id": race_state["track_id"]}
+                )
+            elif command == "start":
+                race_state["speed"] = float(payload.get("speed", 1.0) or 1.0)
+                race_state["running"] = True
+                if update_task is None or update_task.done():
+                    update_task = asyncio.create_task(stream_updates())
+            elif command == "pause":
+                race_state["running"] = False
+                if update_task and not update_task.done():
+                    update_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await update_task
+                await websocket.send_json({"type": "paused", "lap": race_state["lap"]})
+            else:
+                await websocket.send_json(
+                    {"type": "error", "message": f"Unknown command: {command}"}
+                )
+    except WebSocketDisconnect:
+        pass
+    finally:
+        race_state["running"] = False
+        if update_task and not update_task.done():
+            update_task.cancel()

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { apiUrl } from '../utils/api';
 
 const ConfidenceCurve = ({ isPlaying }) => {
     const [history, setHistory] = useState([]);
@@ -8,7 +9,7 @@ const ConfidenceCurve = ({ isPlaying }) => {
         let interval;
         const fetchData = async () => {
             try {
-                const res = await fetch('http://localhost:8000/api/ml/confidence-curve');
+                const res = await fetch(apiUrl('/api/ml/confidence-curve'));
                 if (res.ok) {
                     const data = await res.json();
                     if (data.snapshots) {

@@ -1,5 +1,6 @@
 import React, { useRef, useMemo, useState } from 'react'
 import ConfidenceCurve from './ConfidenceCurve'
+import { apiUrl } from '../utils/api'
 
 const TEAM_COLORS = {
     'VER': '#3671C6', 'PER': '#3671C6',
@@ -40,7 +41,7 @@ const PredictionPanel = ({ predictions, raceState }) => {
     const handleRetrain = async () => {
         try {
             setIsRetraining(true)
-            await fetch('http://localhost:8000/api/ml/retrain', { method: 'POST' })
+            await fetch(apiUrl('/api/ml/retrain'), { method: 'POST' })
             setTimeout(() => setIsRetraining(false), 2000)
         } catch (e) {
             console.error("Retrain failed", e)
@@ -247,21 +248,6 @@ const PredictionPanel = ({ predictions, raceState }) => {
                             <ConfidenceCurve isPlaying={raceState?.is_finished === false} />
                         </div>
 
-                        {/* Simulation Branch Button */}
-                        <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed #444', textAlign: 'center' }}>
-                            <button style={{
-                                background: 'linear-gradient(90deg, #6a11cb 0%, #2575fc 100%)',
-                                color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px',
-                                fontSize: '0.7rem', fontWeight: 700, letterSpacing: '1px', cursor: 'pointer',
-                                width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px',
-                                boxShadow: '0 4px 15px rgba(37, 117, 252, 0.3)', transition: 'transform 0.2s, box-shadow 0.2s'
-                            }}
-                                onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(37, 117, 252, 0.4)' }}
-                                onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(37, 117, 252, 0.3)' }}
-                            >
-                                <span style={{ fontSize: '1rem' }}>🔀</span> SIMULATE ALT STRATEGY
-                            </button>
-                        </div>
                     </>
                 )}
             </div>

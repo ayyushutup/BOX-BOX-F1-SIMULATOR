@@ -3,10 +3,25 @@ FastAPI server for BOX-BOX F1 Scenario Simulator
 Provides REST API for stateless ML scenario predictions
 """
 
+import os
+import logging
+from uuid import uuid4
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, Dict
+from typing import Optional, Dict, Literal
+
+# Logging Configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("api.log")
+    ]
+)
+logger = logging.getLogger("boxbox-api")
 
 from .data.tracks import TRACKS
 from .scenarios.types import ScenarioConfig
@@ -14,17 +29,35 @@ from .scenarios.compiler import compile_scenario
 from .api import ml, reality, ws
 from .ml.predictor import RacePredictor
 
+# Singleton predictor
+ml_predictor = RacePredictor()
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Preload ML models before serving requests."""
+    logger.info("Preloading ML models into memory...")
+    # `ml_predictor` initializes itself in the constructor via `load_models()`
+    logger.info("ML models successfully loaded and ready for predictions.")
+    yield
+
 app = FastAPI(
     title="BOX-BOX F1 Scenario Prediction Engine",
     description="Stateless Monte Carlo scenario outcome generator",
-    version="3.0.0"
+    version="3.0.0",
+    lifespan=lifespan,
 )
 
 # CORS middleware for frontend connection
+origins_env = os.getenv("CORS_ORIGINS", "http://localhost:5173")
+origins = [origin.strip() for origin in origins_env.split(",") if origin.strip()]
+if not origins:
+    origins = ["http://localhost:5173"]
+allow_credentials = "*" not in origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=origins,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -34,10 +67,6 @@ app.include_router(ml.router, prefix="/api/ml", tags=["Machine Learning"])
 app.include_router(reality.router, prefix="/api/reality", tags=["Reality Injection"])
 app.include_router(ws.router, tags=["WebSockets"])
 
-# Singleton predictor - loads models once at startup
-ml_predictor = RacePredictor()
-
-
 # =====================
 # REST API ENDPOINTS
 # =====================
@@ -45,6 +74,11 @@ ml_predictor = RacePredictor()
 @app.get("/")
 def root():
     return {"message": "BOX-BOX F1 Prediction Engine", "status": "running", "version": "3.0.0"}
+
+@app.get("/health")
+def health():
+    """Healthcheck endpoint for Docker and Load Balancers"""
+    return {"status": "ok"}
 
 
 @app.get("/api/tracks")
@@ -81,19 +115,33 @@ def get_tracks():
 # =====================
 
 @app.post("/api/scenarios/predict")
-def predict_scenario_outcome(config: ScenarioConfig, mode: str = "standard", intensity: str = "cinematic_high"):
+def predict_scenario_outcome(
+    config: ScenarioConfig,
+    mode: str = "standard",
+    intensity: str = "cinematic_high",
+    prediction_tier: Literal["preview", "full"] = "full",
+):
     """
     Stateless endpoint that takes a custom parameter-driven ScenarioConfig,
     compiles it, and returns an instant Monte Carlo prediction distribution.
     """
-    # 1. Compile state
-    state = compile_scenario(config)
-    
-    # 2. Predict outcomes
+    request_id = uuid4().hex[:12]
+
     try:
-        predictions = ml_predictor.predict(state, scenario_config=config)
+        state = compile_scenario(config)
+        logger.info(
+            "Processing prediction request id=%s track=%s tier=%s",
+            request_id,
+            config.race_structure.track_id,
+            prediction_tier,
+        )
+        predictions = ml_predictor.predict(
+            state,
+            scenario_config=config,
+            prediction_tier=prediction_tier,
+        )
         if not predictions:
-            raise HTTPException(status_code=500, detail="ML Predictor failed to generate results.")
+            raise RuntimeError("ML predictor returned empty output.")
         
         # 3. Generate AI commentary
         from app.ml.commentary import RaceCommentator
@@ -132,29 +180,40 @@ def predict_scenario_outcome(config: ScenarioConfig, mode: str = "standard", int
             }
         }
         
-        commentary = commentator.generate(
-            predictions, 
-            {
-                "cars": baseline_cars,
-                "meta": {"tick": state.meta.tick if hasattr(state, "meta") and hasattr(state.meta, "tick") else 0}
-            }, 
-            scenario_dict,
-            mode=mode,
-            intensity=intensity
-        )
+        commentary = None
+        reasoning_tree = None
+        try:
+            commentary = commentator.generate(
+                predictions, 
+                {
+                    "cars": baseline_cars,
+                    "meta": {"tick": state.meta.tick if hasattr(state, "meta") and hasattr(state.meta, "tick") else 0}
+                }, 
+                scenario_dict,
+                mode=mode,
+                intensity=intensity
+            )
 
-        # 4. Generate reasoning tree for expandable panel
-        reasoning_tree = commentator.generate_reasoning_tree(
-            predictions,
-            {
-                "cars": baseline_cars,
-                "meta": {"tick": state.meta.tick if hasattr(state, "meta") and hasattr(state.meta, "tick") else 0}
-            },
-            scenario_dict
-        )
+            # 4. Generate reasoning tree for expandable panel
+            reasoning_tree = commentator.generate_reasoning_tree(
+                predictions,
+                {
+                    "cars": baseline_cars,
+                    "meta": {"tick": state.meta.tick if hasattr(state, "meta") and hasattr(state.meta, "tick") else 0}
+                },
+                scenario_dict
+            )
+        except Exception as commentary_error:
+            logger.warning(
+                "Commentary generation failed for request id=%s: %s",
+                request_id,
+                commentary_error,
+            )
             
         return {
             "scenario_id": "custom",
+            "request_id": request_id,
+            "prediction_tier": prediction_tier,
             "predictions": predictions,
             "commentary": commentary,
             "reasoning_tree": reasoning_tree,
@@ -162,7 +221,35 @@ def predict_scenario_outcome(config: ScenarioConfig, mode: str = "standard", int
                 "cars": baseline_cars
             }
         }
+    except ValueError as e:
+        logger.warning("Invalid scenario input request id=%s: %s", request_id, e)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_SCENARIO",
+                "message": str(e),
+                "request_id": request_id,
+            },
+        )
+    except RuntimeError as e:
+        logger.error("Prediction runtime error request id=%s: %s", request_id, e)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "PREDICTION_RUNTIME_ERROR",
+                "message": str(e),
+                "request_id": request_id,
+            },
+        )
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Unhandled prediction failure request id=%s", request_id)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "INTERNAL_ERROR",
+                "message": "Prediction engine failed unexpectedly.",
+                "request_id": request_id,
+            },
+        )

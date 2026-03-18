@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { apiUrl } from '../utils/api';
 
 
 const ScoreBadge = ({ score }) => {
@@ -58,14 +59,14 @@ const SimVsReality = () => {
 
     // Fetch available races when season changes
     useEffect(() => {
-        fetch(`http://localhost:8000/api/reality/available/${selectedSeason}`)
+        fetch(apiUrl(`/api/reality/available/${selectedSeason}`))
             .then(res => res.json())
             .then(data => setAvailableRaces(data))
             .catch(err => console.error("Failed to fetch available races", err));
     }, [selectedSeason]);
 
     const fetchIngestedRaces = () => {
-        fetch('http://localhost:8000/api/reality/races')
+        fetch(apiUrl('/api/reality/races'))
             .then(res => res.json())
             .then(data => setIngestedRaces(data))
             .catch(err => console.error("Failed to fetch ingested races", err));
@@ -74,7 +75,7 @@ const SimVsReality = () => {
     const handleIngest = async (round, name, circuit) => {
         setIngesting(true);
         try {
-            await fetch('http://localhost:8000/api/reality/ingest', {
+            await fetch(apiUrl('/api/reality/ingest'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ season: selectedSeason, round })
@@ -90,7 +91,7 @@ const SimVsReality = () => {
     const handleCompare = async (season, round) => {
         setLoading(true);
         try {
-            const res = await fetch(`http://localhost:8000/api/reality/compare/${season}/${round}`);
+            const res = await fetch(apiUrl(`/api/reality/compare/${season}/${round}`));
             const data = await res.json();
             setComparisonData(data);
         } catch (err) {
