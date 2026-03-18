@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.10-slim-bookworm
 
 # Prevent Python from writing pyc files and buffering stdout
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -7,9 +7,10 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # Install system dependencies (e.g., for compiled C extensions if needed)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update -o Acquire::Retries=3 && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
