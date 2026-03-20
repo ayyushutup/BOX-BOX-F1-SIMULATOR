@@ -13,7 +13,7 @@ web_concurrency = int(os.getenv("WEB_CONCURRENCY", default_web_concurrency))
 # Gunicorn config
 workers = web_concurrency
 worker_class = "uvicorn.workers.UvicornWorker"
-bind = "0.0.0.0:8000"
+bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"
 
 # Performance & Reliability
 keepalive = int(os.getenv("GUNICORN_KEEP_ALIVE", 5))

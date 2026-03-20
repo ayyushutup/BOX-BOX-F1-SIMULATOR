@@ -1,0 +1,11 @@
+backend/
+data/
+f1_cache/
+*.ipynb
+*.log
+backend.log
+api.log
+docker-compose.yml
+Dockerfile
+run.sh
+deploy.sh

@@ -1,8 +1,7 @@
-version: '3.8'
-
 services:
   timescaledb:
     image: timescale/timescaledb-ha:pg14-latest
+    platform: linux/amd64
     container_name: boxbox_timescaledb
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
@@ -29,6 +28,9 @@ services:
     restart: always
     env_file:
       - .env
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@timescaledb:5432/boxbox
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "8000:8000"
     volumes:
@@ -38,9 +40,10 @@ services:
       - boxbox-net
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      retries: 3
+      retries: 10
+      start_period: 120s
     shm_size: '2gb'
     depends_on:
       timescaledb:
