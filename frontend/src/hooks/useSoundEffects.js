@@ -66,7 +66,7 @@ export function useSoundEffects(enabled = true) {
     const processEvents = useCallback((events) => {
         if (!enabled || !events?.length) return
 
-        // Only play sounds for NEW events since last check
+        // Only play sounds for New events since last check
         const newCount = events.length
         if (newCount <= prevEventsRef.current) {
             prevEventsRef.current = newCount

@@ -116,7 +116,7 @@ class RLDriverPredictor:
         time_elapsed = 0.0
         accumulated_stress = 0.0
         
-        # NEW: Track speed samples and extreme events for variance + mistake signals
+        # New: Track speed samples and extreme events for variance + mistake signals
         speed_samples = []
         extreme_input_ticks = 0
         total_ticks = 0

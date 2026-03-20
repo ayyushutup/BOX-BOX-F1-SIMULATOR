@@ -110,7 +110,7 @@ def get_predictions(data: FrontendState):
                 rc = RaceControl(data.race_control)
             except ValueError:
                 pass
-        # Backwards compat: honour legacy boolean fields if race_control wasn't explicit
+        # Backward compatibility: honour legacy boolean fields if race_control wasn't explicit
         if rc == RaceControl.GREEN and data.safety_car_active:
             rc = RaceControl.SAFETY_CAR
         elif rc == RaceControl.GREEN and data.vsc_active:

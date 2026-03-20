@@ -115,7 +115,7 @@ class TestDirtyAirMistakeEffect:
 
 
 # =====================================================================
-# TRACK EVOLUTION
+# Track evolution
 # =====================================================================
 
 class TestTrackEvolution:
@@ -165,7 +165,7 @@ class TestTrackEvolution:
 
 
 # =====================================================================
-# DRIVER MOMENTUM
+# Driver momentum
 # =====================================================================
 
 class TestMomentum:

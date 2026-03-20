@@ -24,7 +24,7 @@ from app.simulation.physics import (
 
 
 # =====================================================================
-# TRACK OVERTAKE DIFFICULTY FACTORS
+# Track overtake difficulty factors
 # =====================================================================
 # Derived from real F1 overtake statistics per circuit.
 # Higher = easier to overtake. Scales sigmoid overtake probability.

@@ -325,14 +325,14 @@ function App() {
   }, [fetchPrediction])
 
   // ==================
-  // VIEW: HOME
+  // View: HOME
   // ==================
   if (view === 'home') {
     return <Home onNavigate={(v) => setView(v === 'scenarios' ? 'laboratory' : v)} />
   }
 
   // ==================
-  // VIEW: LABORATORY
+  // View: LABORATORY
   // ==================
   if (view === 'laboratory') {
     return <ScenarioLaboratory onSelectScenario={handleLaunchSimulation} onBackToHome={() => setView('home')} />
@@ -441,7 +441,7 @@ function App() {
   }
 
   // ==================
-  // VIEW: SIMULATION (Stateless Engine Dashboard)
+  // View: SIMULATION (Stateless Engine Dashboard)
   // ==================
   return (
     <Suspense fallback={<div className="app-container"><PredictionLoader isLoading={true} /></div>}>
@@ -571,10 +571,10 @@ function App() {
 
       <div className="w-full relative">
 
-        {/* NEW 3-ZONE LAYOUT */}
+        {/* New 3-ZONE LAYOUT */}
         <main className="simulation-main-grid" style={{ gap: '16px', minHeight: isMobile ? 'auto' : 'calc(100vh - 210px)', paddingBottom: isMobile ? '130px' : '0', marginTop: isMobile ? '8px' : '16px' }}>
 
-          {/* LEFT: Standings + Scenario Controls */}
+          {/* Left: Standings + Scenario Controls */}
           <div className={`zone-left ${isMobile && mobileActiveSection !== 'standings' ? 'mobile-hidden' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden' }}>
             <div className="panel tower-panel" style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <h2 className="panel-title" style={{ flexShrink: 0 }}>{hasPredictedStandings ? 'FINAL STANDINGS' : 'BASELINE STANDINGS'}</h2>
@@ -589,7 +589,7 @@ function App() {
             {!isMobile && renderLiveControls(false)}
           </div>
 
-          {/* CENTER: Charts with View Toggle */}
+          {/* Center: Charts with View Toggle */}
           <div className={`zone-center ${isMobile && mobileActiveSection !== 'analysis' ? 'mobile-hidden' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto', paddingRight: '4px' }}>
 
             {/* Analysis Depth Toggle */}
@@ -632,7 +632,7 @@ function App() {
             )}
           </div>
 
-          {/* RIGHT: Decision Tree + Sensitivity + Volatility */}
+          {/* Right: Decision Tree + Sensitivity + Volatility */}
           <div className={`zone-right ${isMobile && mobileActiveSection !== 'predictions' ? 'mobile-hidden' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
             <PredictionPanel predictions={predictions} raceState={baselineState} activeConfig={activeConfig} />
             <RaceAlerts predictions={predictions} />
@@ -647,7 +647,7 @@ function App() {
 
         </main>
 
-        {/* BOTTOM: Driver Strategy Breakdown */}
+        {/* Bottom: Driver Strategy Breakdown */}
         {!isMobile && selectedDriver && (() => {
           const selectedCar = baselineState?.cars?.find(c => c.driver === selectedDriver);
           if (!selectedCar) return null;
@@ -666,7 +666,7 @@ function App() {
           />
         </div>
 
-        {/* MOBILE CONTROLS DRAWER */}
+        {/* Mobile CONTROLS DRAWER */}
         {isMobile && mobileControlsOpen && (
           <>
             <div className="mobile-controls-scrim" onClick={() => setMobileControlsOpen(false)} />

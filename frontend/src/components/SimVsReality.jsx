@@ -107,7 +107,7 @@ const SimVsReality = () => {
             <h1 className="text-3xl font-bold mb-6 text-red-600">Reality Injection & Calibration</h1>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* LEFT: INGESTION */}
+                {/* Left: INGESTION */}
                 <div className="panel bg-gray-800 p-4 rounded-lg">
                     <h2 className="text-xl font-bold mb-4">1. Ingest Real Data</h2>
                     <div className="flex gap-4 mb-4">
@@ -152,7 +152,7 @@ const SimVsReality = () => {
                     </div>
                 </div>
 
-                {/* RIGHT: COMPARISON */}
+                {/* Right: COMPARISON */}
                 <div className="panel bg-gray-800 p-4 rounded-lg">
                     <h2 className="text-xl font-bold mb-4">2. Compare Simulation</h2>
                     <button onClick={fetchIngestedRaces} className="text-xs underline mb-2">Refresh List</button>
@@ -199,7 +199,7 @@ const SimVsReality = () => {
                 </div>
             </div>
 
-            {/* BOTTOM: CHARTS */}
+            {/* Bottom: CHARTS */}
             {comparisonData && (
                 <div className="mt-8 panel bg-gray-800 p-4 rounded-lg">
                     <h2 className="text-xl font-bold mb-4 flex items-center gap-2">

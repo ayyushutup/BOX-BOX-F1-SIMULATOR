@@ -14,7 +14,7 @@ Low-level physics calculations for lap simulation:
 from .rng import SeededRNG
 
 # =====================================================================
-# CONSTANTS
+# Constants
 # =====================================================================
 
 BASE_SPEED = 200.0  # km/h baseline on a medium-speed section
@@ -144,7 +144,7 @@ def calculate_dirty_air_mistake_effect(dirty_air_factor: float) -> float:
 
 
 # =====================================================================
-# SPEED CALCULATION
+# Speed calculation
 # =====================================================================
 
 def calculate_speed(
@@ -205,7 +205,7 @@ def calculate_speed(
 
 
 # =====================================================================
-# TIRE WEAR
+# Tire wear
 # =====================================================================
 
 def calculate_tire_wear(
@@ -246,7 +246,7 @@ def calculate_tire_wear(
 
 
 # =====================================================================
-# FUEL CONSUMPTION
+# Fuel consumption
 # =====================================================================
 
 def calculate_fuel_consumption(
@@ -304,7 +304,7 @@ def calculate_drs_boost(drs_active: bool) -> float:
 
 
 # =====================================================================
-# SLIPSTREAM
+# Slipstream
 # =====================================================================
 
 def calculate_slipstream_boost(
@@ -374,7 +374,7 @@ def calculate_ers_harvest(
 
 
 # =====================================================================
-# TRACK EVOLUTION
+# Track evolution
 # =====================================================================
 
 def calculate_track_grip(base_grip: float, rubber_level: float) -> float:
@@ -412,7 +412,7 @@ def update_rubber_level(
 
 
 # =====================================================================
-# DRIVER MOMENTUM
+# Driver momentum
 # =====================================================================
 
 def calculate_momentum_effect(momentum: float) -> dict:
@@ -443,7 +443,7 @@ def calculate_momentum_effect(momentum: float) -> dict:
 
 
 # =====================================================================
-# BLUE FLAGS
+# Blue flags
 # =====================================================================
 
 def should_yield_for_blue_flag(car_lap: int, leader_lap: int) -> bool:

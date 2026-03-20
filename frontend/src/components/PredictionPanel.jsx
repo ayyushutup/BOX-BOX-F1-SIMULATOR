@@ -15,7 +15,7 @@ const TEAM_COLORS = {
     'BOT': '#52E252', 'ZHO': '#52E252',
 }
 
-const PredictionPanel = ({ predictions, raceState }) => {
+const PredictionPanel = ({ predictions, raceState, activeConfig = null }) => {
     const prevPredRef = useRef(null)
     const [isRetraining, setIsRetraining] = useState(false)
 

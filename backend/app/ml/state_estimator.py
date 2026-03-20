@@ -27,7 +27,7 @@ from typing import Dict, Optional, Tuple
 
 
 # =====================================================================
-# STATE INDICES
+# State indices
 # =====================================================================
 IDX_TIRE_WEAR = 0
 IDX_TIRE_TEMP = 1
@@ -39,7 +39,7 @@ STATE_DIM = 6
 
 
 # =====================================================================
-# PHYSICS CONSTANTS FOR STATE TRANSITION
+# Physics constants for state transition
 # =====================================================================
 FUEL_BURN_PER_LAP = 1.6         # kg consumed per lap (average)
 FUEL_TIME_EFFECT = 0.035         # seconds per kg (lighter = faster)

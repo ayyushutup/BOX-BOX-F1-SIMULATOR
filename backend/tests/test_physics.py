@@ -86,7 +86,7 @@ class TestDrivingModes:
         assert con_f > bal_f
 
 
-# --- DRS ---
+# --- drs ---
 
 def _make_zone(start, end):
     """quick helper for DRS zone objects"""
@@ -140,7 +140,7 @@ class TestSlipstream:
         assert corner < straight
 
 
-# --- ERS ---
+# --- ers ---
 
 class TestERS:
     def test_deploys_on_fast(self):

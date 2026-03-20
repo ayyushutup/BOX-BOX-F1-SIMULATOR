@@ -22,7 +22,7 @@ from app.ml.tire_model import NeuralTireModel
 
 
 # =====================================================================
-# STRATEGY CANDIDATE GENERATOR
+# Strategy candidate generator
 # =====================================================================
 
 # Compound sequences for different stop counts
@@ -89,7 +89,7 @@ class StrategyOptimizer:
         min_stint = 8   # Minimum laps before/after a stop
         remaining = total_laps - current_lap
 
-        # === 1-STOP STRATEGIES ===
+        # === 1-stop strategies ===
         # Coarser grid when race has many laps remaining to reduce search blow-up.
         one_stop_step = 4 if remaining > 35 else 3
         for compounds in ONE_STOP_COMPOUNDS:

@@ -81,26 +81,26 @@ class RaceCommentator:
         """Original analytical generation method."""
         sections = []
 
-        # === HEADLINE ===
+        # === headline ===
         sections.append(self._headline(order, mc))
 
-        # === LEADER ANALYSIS ===
+        # === leader analysis ===
         sections.append(self._leader_analysis(order, mc, factors, bands, avg_positions))
 
-        # === CHALLENGER STORY ===
+        # === challenger story ===
         if len(order) >= 2:
             sections.append(self._challenger_story(order, mc, factors))
 
-        # === CHAOS / SCENARIO CONTEXT ===
+        # === chaos / scenario context ===
         if scenario_config:
             ctx = self._scenario_context(scenario_config, mc, order)
             if ctx:
                 sections.append(ctx)
 
-        # === CAUSAL FACTORS INSIGHT ===
+        # === causal factors insight ===
         sections.append(self._factor_insight(order[:3], factors))
 
-        # === VOLATILITY CLOSING ===
+        # === volatility closing ===
         sections.append(self._volatility_closing(order, mc, bands))
 
         return "\n\n".join([s for s in sections if s])
@@ -122,21 +122,21 @@ class RaceCommentator:
         else:
             phase = "Late"
 
-        # === 1. OPENING TENSION ===
+        # === 1. opening tension ===
         sections.append(self._cinematic_opening(order, mc, phase, bands))
 
-        # === 2. MOMENTUM & CONFLICT ===
+        # === 2. momentum & conflict ===
         escalation = self._cinematic_escalation(order, mc, factors)
         if escalation:
             sections.append(escalation)
 
-        # === 3. UNCERTAINTY SPIKE ===
+        # === 3. uncertainty spike ===
         if scenario_config:
             ctx = self._cinematic_scenario(scenario_config, mc, order, intensity)
             if ctx:
                 sections.append(ctx)
 
-        # === 4. RADIO-STYLE CLOSING ===
+        # === 4. radio-style closing ===
         sections.append(self._cinematic_closing(order, mc, phase))
 
         return "\n\n".join([s for s in sections if s])
@@ -515,7 +515,7 @@ class RaceCommentator:
         leader = order[0]
         leader_pct = mc.get(leader, 0) * 100
 
-        # === RACE PHASE DETECTION ===
+        # === race phase detection ===
         tick = baseline_state.get('meta', {}).get('tick', 0)
         if tick < 200000:
             race_phase = "early"
@@ -524,7 +524,7 @@ class RaceCommentator:
         else:
             race_phase = "late"
 
-        # === CONFIDENCE SCORE ===
+        # === confidence score ===
         # Recalibrated to be human-readable for F1-sized fields (20 drivers).
         # We blend entropy with front-of-field concentration signals.
         probs = sorted([p for p in mc.values() if p > 0], reverse=True)
@@ -551,7 +551,7 @@ class RaceCommentator:
         else:
             confidence_score = 20
 
-        # === KEY FACTORS ===
+        # === key factors ===
         key_factors = []
         leader_factors = factors.get(leader, [])
         for f in leader_factors[:6]:
@@ -575,7 +575,7 @@ class RaceCommentator:
                 "direction": direction
             })
 
-        # === BIAS WARNINGS ===
+        # === bias warnings ===
         bias_warnings = []
 
         # Check: same-team dominance
@@ -602,7 +602,7 @@ class RaceCommentator:
             if rain > 0.5 and not any('Rain' in f for f in leader_factors):
                 bias_warnings.append("Wet conditions active but leader has no rain-specific adjustment")
 
-        # === HEADLINE ===
+        # === headline ===
         if leader_pct > 50:
             headline = f"{self._name(leader)} is the clear favourite at {leader_pct:.0f}%"
         elif leader_pct > 30:

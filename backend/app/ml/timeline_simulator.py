@@ -20,7 +20,7 @@ from app.simulation.interaction_graph import RaceInteractionGraph
 
 
 # =====================================================================
-# PHYSICS CONSTANTS
+# Physics constants
 # =====================================================================
 FUEL_BURN_PER_LAP = 1.6          # kg/lap
 FUEL_TIME_EFFECT = 0.035          # s/kg (lighter = faster)
@@ -274,7 +274,7 @@ class TimelineSimulator:
                     gap_sums[drv.driver_id][lap_offset].append(drv.gap_ahead)
                     tire_wear_sums[drv.driver_id][lap_offset].append(drv.tire_wear)
 
-        # === AGGREGATE RESULTS ===
+        # === aggregate results ===
         timeline = {}
         tire_cliff_lap = {}
 

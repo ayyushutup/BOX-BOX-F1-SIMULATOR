@@ -28,7 +28,7 @@ const SensitivityAnalysis = ({ raceState, predictions, baselinePredictions }) =>
             const totalDelta = modWin - baseWin;
 
             // Distribute the total delta across variables based on relative causal contribution
-            const factors = predictions.causal_factors?.[topDriver] || [];
+            const factors = (predictions.causal_factors?.[topDriver] || []).filter(f => typeof f === 'string');
             const hasWeather = factors.some(f => f.includes('Rain'));
             const hasTire = factors.some(f => f.includes('Tire') || f.includes('Deg'));
             const hasChaos = factors.some(f => f.includes('Chaos'));
@@ -67,6 +67,9 @@ const SensitivityAnalysis = ({ raceState, predictions, baselinePredictions }) =>
         if (impact <= -0.5) return 'var(--green)';
         return '#888';
     };
+
+    const maxAbsImpact = Math.max(1, ...data.map(d => Math.abs(d.impact || 0)));
+    const axisBound = Math.ceil(maxAbsImpact * 1.25 * 10) / 10;
 
     const getExplanation = (impact) => {
         if (impact > 0) return `Worse by ${Math.abs(impact).toFixed(1)} positions`;
@@ -117,7 +120,7 @@ const SensitivityAnalysis = ({ raceState, predictions, baselinePredictions }) =>
                 </div>
             </div>
 
-            <div style={{ flex: 1, minHeight: 0, width: '100%', position: 'relative' }}>
+            <div style={{ height: 170, width: '100%', position: 'relative' }}>
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={data} layout="vertical" margin={{ top: 0, right: 40, left: 10, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
@@ -125,7 +128,7 @@ const SensitivityAnalysis = ({ raceState, predictions, baselinePredictions }) =>
                             type="number"
                             stroke="#555"
                             tick={{ fill: '#888', fontSize: 10, fontFamily: 'var(--font-mono)' }}
-                            domain={[-3, 3]}
+                            domain={[-axisBound, axisBound]}
                             axisLine={false}
                             tickLine={false}
                         />

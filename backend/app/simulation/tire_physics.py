@@ -103,7 +103,7 @@ class TirePhysicsEngine:
         new_state = state.copy()
         new_state['age'] += 1
         
-        # 1. TEMPERATURE PHYSICS
+        # 1. temperature physics
         if is_safety_car:
             # Massive cooling under SC
             new_temp = new_state['temperature'] - props['cooling_rate'] * 1.5
@@ -123,7 +123,7 @@ class TirePhysicsEngine:
             
             new_state['temperature'] = min(150.0, new_state['temperature'] + temp_gain - cooling)
 
-        # 2. WEAR PHYSICS
+        # 2. wear physics
         if is_safety_car:
             new_state['wear'] += props['wear_rate_base'] * 0.2
         else:

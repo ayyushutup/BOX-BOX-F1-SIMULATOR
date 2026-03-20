@@ -273,7 +273,7 @@ const WeatherTimeline = ({ totalLaps, rainStartLap, rainProbability, temperature
 };
 
 
-// ===================== MAIN COMPONENT =====================
+// ===================== main component =====================
 
 const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
     const [activeTab, setActiveTab] = useState('RACE_STRUCTURE');
@@ -497,10 +497,10 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
                 )}
             </div>
 
-            {/* ========= MAIN LAYOUT ========= */}
+            {/* ========= main layout ========= */}
             <div className="scenario-main-layout" style={{ display: 'flex', gap: '32px', flexDirection: isMobile ? 'column' : 'row' }}>
 
-                {/* ===== SIDEBAR NAV ===== */}
+                {/* ===== sidebar nav ===== */}
                 {!isMobile && (
                     <div style={{ width: '260px', display: 'flex', flexDirection: 'column', gap: '4px', flexShrink: 0 }}>
                         {CATEGORIES.map(cat => {
@@ -537,7 +537,7 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
                     </div>
                 )}
 
-                {/* ===== WORKING AREA ===== */}
+                {/* ===== working area ===== */}
                 <div style={{ flex: 1, background: 'rgba(20, 24, 32, 0.4)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '32px', position: 'relative' }}>
 
                     {/* Section header with reset (Desktop Only) */}
@@ -555,7 +555,7 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
                         </div>
                     )}
 
-                    {/* ===== RACE STRUCTURE ===== */}
+                    {/* ===== race structure ===== */}
                     {activeTab === 'RACE_STRUCTURE' && (
                         <div style={{ marginBottom: isMobile ? '40px' : '0' }}>
                             {isMobile && <h2 style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '16px' }}>🏁 Race Structure</h2>}
@@ -697,7 +697,7 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
                         </div>
                     )}
 
-                    {/* ===== WEATHER ===== */}
+                    {/* ===== weather ===== */}
                     {activeTab === 'WEATHER' && (
                         <div style={{ marginBottom: isMobile ? '40px' : '0' }}>
                             {isMobile && <h2 style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '16px', marginTop: '20px' }}>🌦️ Weather Timeline</h2>}
@@ -718,7 +718,7 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
                         </div>
                     )}
 
-                    {/* ===== ENGINEERING ===== */}
+                    {/* ===== engineering ===== */}
                     {activeTab === 'ENGINEERING' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginBottom: isMobile ? '40px' : '0' }}>
                             {isMobile && <h2 style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '4px', marginTop: '20px' }}>🏎️ Car Setup</h2>}
@@ -733,7 +733,7 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
                         </div>
                     )}
 
-                    {/* ===== TEAMS ===== */}
+                    {/* ===== teams ===== */}
                     {activeTab === 'TEAMS' && (
                         <div style={{ marginBottom: isMobile ? '40px' : '0' }}>
                             {isMobile && <h2 style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '16px', marginTop: '20px' }}>⚙️ Team Ratings</h2>}
@@ -788,7 +788,7 @@ const ScenarioLaboratory = ({ onSelectScenario, onBackToHome }) => {
                         </div>
                     )}
 
-                    {/* ===== DRIVERS ===== */}
+                    {/* ===== drivers ===== */}
                     {activeTab === 'DRIVERS' && (
                         <div style={{ marginBottom: isMobile ? '40px' : '0' }}>
                             {isMobile && <h2 style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '16px', marginTop: '20px' }}>🧠 Driver Persona</h2>}

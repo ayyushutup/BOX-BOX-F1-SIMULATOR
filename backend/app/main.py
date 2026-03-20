@@ -62,13 +62,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# REGISTER ROUTERS
+# Register routers
 app.include_router(ml.router, prefix="/api/ml", tags=["Machine Learning"])
 app.include_router(reality.router, prefix="/api/reality", tags=["Reality Injection"])
 app.include_router(ws.router, tags=["WebSockets"])
 
 # =====================
-# REST API ENDPOINTS
+# Rest api endpoints
 # =====================
 
 @app.get("/")
@@ -111,7 +111,7 @@ def get_tracks():
 
 
 # =====================
-# SCENARIO PREDICTION API
+# Scenario prediction api
 # =====================
 
 @app.post("/api/scenarios/predict")

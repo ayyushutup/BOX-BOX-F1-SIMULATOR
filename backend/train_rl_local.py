@@ -24,7 +24,7 @@ import sys
 import time
 
 # ---------------------------------------------------------------------------
-# CONFIG
+# Config
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(SCRIPT_DIR, ".f1_cache")
@@ -62,7 +62,7 @@ DRIVER_TRAITS = {
 DEFAULT_TRAITS = {'aggression': 0.5, 'consistency': 0.5, 'wet_skill': 0.5, 'tire_management': 0.5, 'risk_tolerance': 0.5}
 
 # ---------------------------------------------------------------------------
-# 1. DATA COLLECTION
+# 1. data collection
 # ---------------------------------------------------------------------------
 def fetch_telemetry():
     os.makedirs(CACHE_DIR, exist_ok=True)
@@ -235,7 +235,7 @@ class F1TelemetryEnv(gym.Env):
 
 
 # ---------------------------------------------------------------------------
-# 3. MAIN
+# 3. main
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     start_time = time.time()
