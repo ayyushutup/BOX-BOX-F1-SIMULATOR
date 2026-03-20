@@ -1,16 +1,41 @@
-# BOX BOX Simulator 🏎️🏁
-*"Because 'Trust me bro' is not a valid pit wall strategy."*
+<div align="center">
+  <img src="docs/images/hero.png" alt="BOX BOX Hero Image" width="800">
 
-Welcome to **BOX BOX**, the predictive F1 race simulation engine for strategy nerds, armchair team principals, and anyone who has ever yelled at their TV because Ferrari put Charles Leclerc on hard tires in the rain. 
+  # BOX BOX Simulator 🏎️🏁
+  *"Because 'Trust me bro' is not a valid pit wall strategy."*
+
+  ![React](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-blue)
+  ![FastAPI](https://img.shields.io/badge/Backend-FastAPI-green)
+  ![ML](https://img.shields.io/badge/ML-LightGBM%20%2B%20RL-orange)
+</div>
+
+Welcome to **BOX BOX**, the predictive F1 race simulation engine for strategy nerds, armchair team principals, and anyone who has ever yelled at their TV because Ferrari put Charles Leclerc on hard tires in the rain.
 
 Instead of guessing what might happen, BOX BOX simulates thousands of alternate realities (using actual math and Monte Carlo methods, not just good vibes) to predict exactly how a race will unfold under chaotic conditions.
 
-## What Does It Do?
+---
+
+## 📸 See it in Action
+
+### The Prediction Engine
+The core dashboard where chaos is transformed into actionable strategy. Monitor live scenario controls, track tyre degradation, and watch the AI dynamically recalculate win probabilities.
+<img src="docs/images/prediction-engine.png" alt="Prediction Engine Dashboard" width="800">
+
+### Scenario Laboratory
+Test your grandmaster strategies before the lights go out. Adjust weather timelines, incident frequencies, and driver personas to see how the race unfolds.
+<img src="docs/images/scenario-lab.png" alt="Scenario Laboratory" width="800">
+<img src="docs/images/scenario-setup.png" alt="Scenario Setup" width="800">
+
+---
+
+## 🏎️ What Does It Do?
 Box Box is a comprehensive full-stack ecosystem that generates probabilistic outcomes for F1 races. You feed it track data, driver aggression, chaotic events (like a random Latifi safety car), and weather modifiers. It then crunches the numbers and aggressively tells you who is mathematically favored to win, complete with expected value (EV) models for pit stops.
 
 ---
 
-## Architecture & Workflow 🧠🔌
+## 🧠 Architecture & Workflow
+
+<img src="docs/images/architecture.png" alt="System Architecture Overview" width="800">
 
 Box Box handles chaos using a beautifully layered architecture. Here is the workflow from your browser to the predictive models:
 
@@ -18,7 +43,7 @@ Box Box handles chaos using a beautifully layered architecture. Here is the work
 The UI acts as your glossy, glassmorphic command center.
 - Captures your unhinged race scenarios (e.g., Max Verstappen on medium aggression, 80% rain chance at Spa).
 - Displays interactive **Architecture Flowcharts**, live telemetry, and **Win Distribution Pies**.
-- Powered by React, built with Vite, styled with a modern aesthetic that makes you feel like an actual race engineer.
+- Styled with a modern aesthetic that makes you feel like an actual race engineer.
 
 ### 2. 🔌 API Core (FastAPI)
 The unyielding traffic cop of the system.
@@ -26,7 +51,7 @@ The unyielding traffic cop of the system.
 - Bridges the gap between the beautiful UI and the terrifying math happening in the background.
 - Uses Python `asyncio` to simultaneously dispatch prediction tasks without blocking the pit lane.
 
-### 3. 🏎️ Simulation Engine (Monte Carlo Run-Time)
+### 3. 🏁 Simulation Engine (Monte Carlo Run-Time)
 This is where the multiverse happens.
 - Runs parallel timeline forecasting using **Monte Carlo Simulation**.
 - Tracks snowball effects like tyre degradation, fuel weight penalties, dirty air, and the infamous DRS trains.
@@ -45,7 +70,7 @@ The brain inside the helmet.
 
 ---
 
-## Running the App Locally
+## 🚀 Running the App Locally
 
 *You don’t need an FIA Super License, just NPM and Python.*
 
@@ -55,13 +80,13 @@ bash run.sh
 ```
 
 - **Frontend App**: `http://localhost:5173/`
-- **Backend API**: `http://0.0.0.0:8000/`
+- **Backend API**: `http://localhost:8000/`
 
-*Note: If the prediction engine throws 404s, make sure you don't have zombie Python processes hogging your port 8000. We already killed them once, but they are persistent.*
+*Note: If the prediction engine throws 404s, make sure you don't have zombie Python processes hogging your port 8000.*
 
 ---
 
-## Contributing
+## 🤝 Contributing
 Think you can improve our tyre degradation models? Found a bug where Alpine randomly wins every simulation? 
 
 Feel free to open an issue or submit a pull request!
