@@ -14,16 +14,16 @@ RUN apt-get update -o Acquire::Retries=3 && apt-get install -y --no-install-reco
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create a non-root user for security
 RUN adduser --disabled-password --gecos '' appuser
 
 # Copy application code and gunicorn config
-COPY app ./app
-COPY data ./data
-COPY gunicorn_conf.py .
+COPY backend/app ./app
+COPY backend/data ./data
+COPY backend/gunicorn_conf.py .
 
 # Create models directory and give appuser ownership
 RUN mkdir -p /models && chown -R appuser:appuser /models /app
